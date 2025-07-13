@@ -11,7 +11,7 @@ import admin from "./routes/admin";
 const app = new Elysia()
     .use(logger())
     .use(cors({
-        origin: ['http://localhost:5173', 'https://vanilla.ovh', 'https://3813-2a02-a318-e0aa-b480-fb9-2a80-2ec9-51.ngrok-free.app']
+        origin: Bun.env.CORS_ORIGINS.split(';')
     }))
     .use(auth)
     .use(guilds)

@@ -6,5 +6,6 @@ declare module "bun" {
         DATABASE_URL: string;
         USER_GUILD_LIMIT: number;
         VERBOSE: boolean;
+        CORS_ORIGINS: string;
     }
 }
