@@ -1,6 +1,6 @@
 import {Context, Elysia} from "elysia";
 import {logger} from "@chneau/elysia-logger";
-// import {cors} from "@elysiajs/cors";
+import {cors} from "@elysiajs/cors";
 import auth from "./routes/auth";
 import websocket from "./websocket";
 import guilds from "./routes/guilds";
@@ -10,10 +10,9 @@ import admin from "./routes/admin";
 
 const app = new Elysia()
     .use(logger())
-    // .use(cors({
-    //     origin: Bun.env.CORS_ORIGINS.split(';'),
-    //     preflight: true
-    // }))
+    .use(cors({
+        origin: ['http://localhost:5173']
+    }))
     .use(auth)
     .use(guilds)
     .use(channels)
