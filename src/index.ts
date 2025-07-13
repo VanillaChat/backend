@@ -11,7 +11,8 @@ import admin from "./routes/admin";
 const app = new Elysia()
     .use(logger())
     .use(cors({
-        origin: Bun.env.CORS_ORIGINS.split(';')
+        origin: Bun.env.CORS_ORIGINS.split(';'),
+        preflight: true
     }))
     .use(auth)
     .use(guilds)
