@@ -1,7 +1,28 @@
-import { Elysia } from "elysia";
+import {Context, Elysia} from "elysia";
+import {logger} from "@chneau/elysia-logger";
+import {cors} from "@elysiajs/cors";
+import auth from "./routes/auth";
+import websocket from "./websocket";
+import guilds from "./routes/guilds";
+import channels from "./routes/channels";
+import invites from "./routes/invites";
+import admin from "./routes/admin";
 
-const app = new Elysia().get("/", () => "Hello Elysia").listen(3000);
+const app = new Elysia()
+    .use(logger())
+    .use(cors({
+        origin: ['http://localhost:5173', 'https://vanilla.ovh', 'https://3813-2a02-a318-e0aa-b480-fb9-2a80-2ec9-51.ngrok-free.app']
+    }))
+    .use(auth)
+    .use(guilds)
+    .use(channels)
+    .use(invites)
+    .use(admin)
+    .use(websocket)
+    .get('/', () => {
+        return "Hello World!";
+    })
+    .all('*', (ctx: Context) => ctx.status(404, '404 Not Found!'))
+    .listen(3000);
 
-console.log(
-  `🦊 Elysia is running at ${app.server?.hostname}:${app.server?.port}`
-);
+console.log(`[Core] Server listening on port ${app.server!.port}`);
