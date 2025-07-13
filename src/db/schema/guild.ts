@@ -26,7 +26,7 @@ export const guildsRelations = relations(guilds, ({one, many}) => ({
 export const guildMembers = pgTable('guild_members', {
     id: serial('id').notNull().primaryKey(),
     guildId: text('guild_id').notNull().references(() => guilds.id, { onDelete: 'cascade' }),
-    userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    userId: text('user_id').notNull().references(() => users.id, { onDelete: 'no action' }),
     nickname: text('nickname')
 });
 
