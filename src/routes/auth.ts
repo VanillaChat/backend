@@ -118,7 +118,7 @@ const auth = new Elysia({ prefix: '/auth' })
             const code = await db.query.inviteCodes.findFirst({
                 where: (codes, {eq}) => eq(codes.code, validatedBody.data.inviteCode!)
             });
-            if (!code) return status(404, {
+            if (!code || code.used) return status(404, {
                code: 'register.errors.inviteCodeNotFound',
                path: 'inviteCode'
             });
