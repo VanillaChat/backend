@@ -10,7 +10,7 @@ import log from "../lib/log";
 
 const ServerCreateSchema = z.object({
     name: z.string("modals.serverCreate.nameRequired").min(2, "modals.serverCreate.nameMinChars").max(64, "modals.serverCreate.nameMaxChars"),
-    brief: z.string("modals.serverCreate.briefRequired").min(2, "modals.serverCreate.briefMinChars").max(16, "modals.serverCreate.briefMinChars"),
+    brief: z.string("modals.serverCreate.briefRequired").min(2, "modals.serverCreate.briefMinChars").max(24, "modals.serverCreate.briefMinChars"),
 });
 
 export default new Elysia({ prefix: '/guilds' })
