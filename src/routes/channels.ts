@@ -136,8 +136,8 @@ export default new Elysia({prefix: '/channels'})
                                 return {
                                     ...message[0],
                                     author: {
-                                        ...ctx.user!.user,
-                                        ...ctx.member
+                                        ...ctx.member,
+                                        ...ctx.user!.user
                                     }
                                 };
                             } catch (e) {
