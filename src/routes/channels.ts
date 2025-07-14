@@ -56,7 +56,7 @@ async function getMessages(channel: string, options: GetMessagesOptions): Promis
         with: {
             author: true
         },
-        orderBy: (messages, { asc }) => [asc(messages.id)]
+        orderBy: (messages, { desc }) => [desc(messages.createdAt)]
     }));
 }
 
