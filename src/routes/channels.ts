@@ -57,7 +57,7 @@ async function getMessages(channel: string, options: GetMessagesOptions): Promis
             author: true
         },
         orderBy: (messages, { desc }) => [desc(messages.createdAt)]
-    }));
+    })).reverse();
 }
 
 export default new Elysia({prefix: '/channels'})
