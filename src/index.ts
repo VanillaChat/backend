@@ -7,6 +7,7 @@ import guilds from "./routes/guilds";
 import channels from "./routes/channels";
 import invites from "./routes/invites";
 import admin from "./routes/admin";
+import cdn from "./routes/cdn";
 
 const app = new Elysia()
     .use(logger())
@@ -18,6 +19,7 @@ const app = new Elysia()
     .use(channels)
     .use(invites)
     .use(admin)
+    .use(cdn)
     .use(websocket)
     .get('/', () => {
         return "Hello World!";
