@@ -5,6 +5,7 @@ import {clearHeartbeat} from "./heartbeat";
 import {eq} from "drizzle-orm";
 import {guildMembers} from "../../../db/schema/guild";
 import log from "../../log";
+import {UserFlags} from "../../bitfield/UserFlags";
 
 export const identifyHandler = async (ws: WS) => {
     log('Gateway', `IDENTIFY opcode received from ${ws.id}.`);
@@ -35,13 +36,24 @@ export const identifyHandler = async (ws: WS) => {
         with: {
             guild: {
                 with: {
-                    channels: true
+                    channels: true,
+                    members: {
+                        with: {
+                            user: true
+                        }
+                    }
                 }
             }
         }
     });
+
+    const presences = new Set<{id: string; status: string;}>();
+
     for (const member of members) {
         ws.subscribe(member.guildId);
+        for (const guildMember of member.guild.members) {
+            if (connectedUsers.has(guildMember.userId)) presences.add({ id: guildMember.userId, status: guildMember.user.status });
+        }
     }
 
     const obj: Record<string, any> = {
@@ -60,7 +72,7 @@ export const identifyHandler = async (ws: WS) => {
         }
     };
 
-    if ((account.user.flags & 1 << 0) === 1 << 0) {
+    if ((account.user.flags & UserFlags.ADMIN) === UserFlags.ADMIN) {
         ws.subscribe("admins");
         const inviteCodes = await db.query.inviteCodes.findMany({
             with: {
@@ -77,6 +89,22 @@ export const identifyHandler = async (ws: WS) => {
             inviteCodes
         }
     }
+
+    if (account.user.status !== 'UNAVAILABLE') {
+        for (const member of members) {
+            ws.publish(member.guildId, JSON.stringify({
+                op: 0,
+                t: "PRESENCE_UPDATE",
+                d: {
+                    userId: account.user.id,
+                    status: account.user.status
+                }
+            }));
+        }
+        presences.add({ id: account.id, status: account.user.status });
+    }
+
+    if (!account.user.bot) obj.d["presences"] = Array.from(presences.values());
 
     ws.send(obj);
     connectedUsers.set(account.id, ws);

@@ -30,7 +30,12 @@ export default new Elysia({ prefix: '/invites' })
                                 with: {
                                     guild: {
                                         with: {
-                                            channels: true
+                                            channels: true,
+                                            members: {
+                                                with: {
+                                                    user: true
+                                                }
+                                            }
                                         }
                                     }
                                 }
@@ -43,12 +48,57 @@ export default new Elysia({ prefix: '/invites' })
                                 guildId: invite.guildId,
                                 userId: ctx.user!.id
                             });
+                            // await setTimeout(1000);
                             const ws = connectedUsers.get(ctx.user!.id);
+                            ctx.server!.publish(invite.guildId, JSON.stringify({
+                                op: 0,
+                                t: "GUILD_MEMBER_ADD",
+                                d: {
+                                    userId: ctx.user!.id,
+                                    guildId: invite.guildId,
+                                    user: ctx.user!.user,
+                                    nickname: null
+                                }
+                            }));
                             if (ws) {
-                                console.log(ws);
                                 ws.subscribe(invite.guildId);
+
+                                for (const member of invite.guild.members) {
+                                    if (connectedUsers.has(member.userId)) ws.send({
+                                       op: 0,
+                                       t: "PRESENCE_UPDATE",
+                                       d: {
+                                           userId: member.userId,
+                                           status: member.user.status
+                                       }
+                                    });
+                                }
+
+                                if (ctx.user!.user.status !== "UNAVAILABLE") {
+                                    ctx.server!.publish(invite.guildId, JSON.stringify({
+                                        op: 0,
+                                        t: "PRESENCE_UPDATE",
+                                        d: {
+                                            userId: ctx.user!.user.id,
+                                            status: ctx.user!.user.status
+                                        }
+                                    }));
+                                }
                             }
-                            return invite;
+                            return {
+                                ...invite,
+                                guild: {
+                                    ...invite.guild,
+                                    members: [
+                                        ...invite.guild.members,
+                                        {
+                                            userId: ctx.user!.id,
+                                            guildId: invite.guildId,
+                                            user: ctx.user!.user,
+                                            nickname: null
+                                        }
+                                    ]
+                                }};
                         } catch (e) {
                             console.error(e);
                             return ctx.status(500);

@@ -45,7 +45,8 @@ export const channels = pgTable('guild_channels', {
     id: text('id').primaryKey().notNull(),
     name: text('name').notNull().default('General'),
     guildId: text('guild_id').notNull().references(() => guilds.id, { onDelete: 'cascade' }),
-    createdAt: timestamp('created_at').defaultNow()
+    createdAt: timestamp('created_at').defaultNow(),
+    rateLimitPerUser: integer('rate_limit_per_user').notNull().default(0)
 });
 
 export const channelsRelations = relations(channels, ({one, many}) => ({

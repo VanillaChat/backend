@@ -58,6 +58,14 @@ const app = new Elysia()
                 });
                 for (const member of members) {
                     log('Gateway', `Unsubscribing ${userId} from ${member.guildId}`);
+                    ws.publish(member.guildId, JSON.stringify({
+                        op: 0,
+                        t: "PRESENCE_UPDATE",
+                        d: {
+                            userId,
+                            status: "UNAVAILABLE"
+                        }
+                    }));
                     ws.unsubscribe(member.guildId);
                 }
                 connectedUsers.delete(userId);

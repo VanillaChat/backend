@@ -7,6 +7,7 @@ import {Snowflake} from "@theinternetfolks/snowflake";
 import {and, eq, gt, InferSelectModel, lt} from "drizzle-orm";
 import {invites} from "../db/schema/guild";
 import * as randomstring from "randomstring";
+import rateLimit from "../middleware/rateLimit";
 
 const messageCreateBody = z.object({
     content: z.string().min(1).max(2000),
@@ -82,22 +83,40 @@ export default new Elysia({prefix: '/channels'})
                                     guild: true
                                 }
                             });
+
+                            const channel = await db.query.channels.findFirst({
+                                where: (channels, {eq}) => eq(channels.id, ctx.params.id)
+                            });
+
                             if (guildMember) {
                                 const { guild, ...member } = guildMember;
-                                return { user, member, guild };
+                                return { user, member, guild, channel };
                             }
-                            return {user, member: null};
+                            return {user, member: null, channel: null};
                         })
                         .guard({
                             async beforeHandle(ctx) {
-                                if (!ctx.member) return ctx.status(401, {
-                                    code: 'messages.errors.unauthorized'
-                                });
-                                const channel = await db.query.channels.findFirst({
-                                    where: (channels, {eq}) => eq(channels.id, ctx.params.id)
-                                });
-                                if (!channel) return ctx.status(404, {
-                                    code: 'messages.errors.channelNotFound'
+                                if (!ctx.member) {
+                                    console.log("no member");
+                                    return ctx.status(401, {
+                                        code: 'messages.errors.unauthorized'
+                                    });
+                                }
+                                if (!ctx.channel) {
+                                    console.log("no channel");
+                                    return ctx.status(404, {
+                                        code: 'messages.errors.channelNotFound'
+                                    });
+                                }
+                                const { limited, retryAfter } = await rateLimit(
+                                    ctx.server!.requestIP(ctx.request)!.address,
+                                    ctx.channel!.rateLimitPerUser > 0 ? 1 : 50,
+                                    ctx.channel!.rateLimitPerUser > 0 ? ctx.channel!.rateLimitPerUser : 1,
+                                    `messages::${ctx.channel!.id}`
+                                );
+                                if (limited) return ctx.status(429, {
+                                    message: 'You are being rate limited.',
+                                    retryAfter
                                 });
                             }
                         })
