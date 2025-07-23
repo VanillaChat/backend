@@ -8,7 +8,7 @@ import {connectedUsers} from "../websocket";
 export default new Elysia({ prefix: '/invites' })
     .guard({
         beforeHandle(ctx) {
-            if (!isAuthenticated(ctx.cookie[Bun.env.NODE_ENV === 'production' ? '__Host-Token' : 'token'])) return ctx.status(401);
+            if (!isAuthenticated(ctx.cookie[Bun.env.NODE_ENV === 'production' ? '__Host-Token' : 'token'])) return ctx.status('Unauthorized');
         }
     }, (_app) =>
         _app
@@ -40,7 +40,7 @@ export default new Elysia({ prefix: '/invites' })
                                     }
                                 }
                             });
-                            if (!invite) return ctx.status(404);
+                            if (!invite) return ctx.status('Not Found');
                             if (invite.uses++ >= invite.maxUses && invite.maxUses > 0) {
                                 await db.delete(invites).where(eq(invites.code, ctx.params.code))
                             }
@@ -101,7 +101,7 @@ export default new Elysia({ prefix: '/invites' })
                                 }};
                         } catch (e) {
                             console.error(e);
-                            return ctx.status(500);
+                            return ctx.status('Internal Server Error');
                         }
                     })
             )

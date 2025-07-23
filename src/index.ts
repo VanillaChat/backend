@@ -24,7 +24,7 @@ const app = new Elysia()
     .get('/', () => {
         return "Hello World!";
     })
-    .all('*', (ctx: Context) => ctx.status(404, '404 Not Found!'))
+    .all('*', (ctx: Context) => ctx.status('Not Found', '404 Not Found!'))
     .listen(3000);
 
 console.log(`[Core] Server listening on port ${app.server!.port}`);

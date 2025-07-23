@@ -83,18 +83,46 @@ const auth = new Elysia({ prefix: '/auth' })
         // }
         if (Bun.env.NODE_ENV !== 'production') {
             cookie.token.value = account.token;
+            cookie.token.expires = new Date(9999, 11, 31, 0, 0, 0);
         } else {
             cookie['__Host-Token'].value = account.token;
             cookie['__Host-Token'].httpOnly = true;
             cookie['__Host-Token'].secure = true;
+            cookie['__Host-Token'].expires = new Date(9999, 11, 31, 0, 0, 0);
         }
         return status(204);
     })
+    .get('/session', async (ctx) => {
+        const cookie = ctx.cookie[Bun.env.NODE_ENV === 'production' ? '__Host-Token' : 'token'];
+        if (!cookie) return ctx.status('Unauthorized');
+        const account = await db.query.accounts.findFirst({
+            where: (accounts, {eq}) => eq(accounts.token, cookie.value!),
+            with: {
+                user: true
+            }
+        });
+        if (!account) return ctx.status('Unauthorized');
+        return {
+            user: account.user,
+            account: {
+                id: account.id,
+                emailVerified: account.emailVerified,
+                locale: account.locale,
+                email: account.email
+            },
+        }
+    })
+    .post('/logout', async (ctx) => {
+        if (!ctx.cookie[Bun.env.NODE_ENV === 'production' ? '__Host-Token' : 'token']) return ctx.status('Unauthorized');
+        ctx.cookie[Bun.env.NODE_ENV === 'production' ? '__Host-Token' : 'token'].value = '';
+        ctx.cookie[Bun.env.NODE_ENV === 'production' ? '__Host-Token' : 'token'].expires = new Date(0);
+        return ctx.status('No Content');
+    })
     .delete('/clear-db', async (ctx) => {
-        if (Bun.env.NODE_ENV === 'production') return ctx.status(500, 'This endpoint can only be used from a development environment.');
+        if (Bun.env.NODE_ENV === 'production') return ctx.status('Internal Server Error', 'This endpoint can only be used from a development environment.');
         await db.delete(users);
         await db.delete(accounts);
-        return ctx.status(204);
+        return ctx.status('No Content');
     })
     .post('/register', async ({body, status, cookie, server}) => {
         log('Auth', `Begin registering user with email ${(body as any).email}.`);

@@ -14,6 +14,8 @@ const messageCreateBody = z.object({
     nonce: z.string().optional()
 });
 
+const messageUpdateBody = z.optional(messageCreateBody);
+
 const messageRetrieveQuery = z.object({
     before: z.string().optional(),
     after: z.string().optional(),
@@ -64,7 +66,7 @@ async function getMessages(channel: string, options: GetMessagesOptions): Promis
 export default new Elysia({prefix: '/channels'})
     .guard({
             beforeHandle(ctx) {
-                if (!isAuthenticated(ctx.cookie[Bun.env.NODE_ENV === 'production' ? '__Host-Token' : 'token'])) return ctx.status(401);
+                if (!isAuthenticated(ctx.cookie[Bun.env.NODE_ENV === 'production' ? '__Host-Token' : 'token'])) return ctx.status('Unauthorized');
             }
         }, (_app) =>
             _app
@@ -98,13 +100,13 @@ export default new Elysia({prefix: '/channels'})
                             async beforeHandle(ctx) {
                                 if (!ctx.member) {
                                     console.log("no member");
-                                    return ctx.status(401, {
+                                    return ctx.status('Unauthorized', {
                                         code: 'messages.errors.unauthorized'
                                     });
                                 }
                                 if (!ctx.channel) {
                                     console.log("no channel");
-                                    return ctx.status(404, {
+                                    return ctx.status('Not Found', {
                                         code: 'messages.errors.channelNotFound'
                                     });
                                 }
@@ -114,7 +116,7 @@ export default new Elysia({prefix: '/channels'})
                                     ctx.channel!.rateLimitPerUser > 0 ? ctx.channel!.rateLimitPerUser : 1,
                                     `messages::${ctx.channel!.id}`
                                 );
-                                if (limited) return ctx.status(429, {
+                                if (limited) return ctx.status('Too Many Requests', {
                                     message: 'You are being rate limited.',
                                     retryAfter
                                 });
@@ -124,7 +126,7 @@ export default new Elysia({prefix: '/channels'})
                             const data = messageCreateBody.safeParse(JSON.parse(ctx.body as any));
                             if (!data.success) {
                                 console.log(data.error);
-                                return ctx.status(400, {
+                                return ctx.status('Bad Request', {
                                     code: 'messages.errors.validationFailed'
                                 });
                             }
@@ -161,7 +163,7 @@ export default new Elysia({prefix: '/channels'})
                                 };
                             } catch (e) {
                                 console.error(e);
-                                return ctx.status(500, {
+                                return ctx.status('Internal Server Error', {
                                     e
                                 });
                             }
@@ -170,17 +172,74 @@ export default new Elysia({prefix: '/channels'})
                             const query = messageRetrieveQuery.safeParse(ctx.query);
                             if (!query.success) {
                                 console.error(query.error);
-                                return ctx.status(400, {
+                                return ctx.status('Bad Request', {
                                     code: 'errors.validationFailed'
                                 });
                             }
                             return await getMessages(ctx.params.id, query.data);
                         })
+                        .patch('/messages/:messageId', async (ctx) => {
+                            const data = messageUpdateBody.safeParse(JSON.parse(ctx.body as string));
+                            if (!data.success) {
+                                console.log(data.error);
+                                return ctx.status('Bad Request', {
+                                    code: 'messages.errors.validationFailed'
+                                });
+                            }
+                            const message = await db.query.messages.findFirst({
+                               where: (messages, {eq}) => eq(messages.id, ctx.params.messageId)
+                            });
+                            if (!message) return ctx.status('Not Found', {
+                                code: 'messages.errors.messageNotFound'
+                            });
+                            if (message.authorId !== ctx.user!.userId) return ctx.status('Forbidden', {
+                                code: 'messages.errors.notYourMessage'
+                            });
+                            if (message.content === data.data?.content) return message;
+                            const updatedMessage = await db
+                                .update(messages)
+                                .set({
+                                    content: data.data?.content,
+                                    updatedAt: new Date()
+                                })
+                                .where(eq(messages.id, ctx.params.messageId))
+                                .returning();
+                            ctx.server?.publish(message.guildId, JSON.stringify({
+                                op: 0,
+                                t: 'MESSAGE_UPDATE',
+                                d: updatedMessage[0]
+                            }));
+                            return updatedMessage[0];
+                        })
+                        .delete('/messages/:messageId', async (ctx) => {
+                            const message = await db.query.messages.findFirst({
+                                where: (messages, {eq}) => eq(messages.id, ctx.params.messageId)
+                            });
+                            if (!message) return ctx.status('Not Found', {
+                                code: 'messages.errors.messageNotFound'
+                            });
+                            if (ctx.user!.userId !== message.authorId) return ctx.status('Forbidden', {
+                               code: 'messages.errors.forbidden'
+                            });
+                            await db
+                                .delete(messages)
+                                .where(eq(messages.id, ctx.params.messageId));
+                            ctx.server?.publish(message.guildId, JSON.stringify({
+                                op: 0,
+                                t: "MESSAGE_DELETE",
+                                d: {
+                                    id: message.id,
+                                    channelId: message.channelId,
+                                    guildId: message.guildId
+                                }
+                            }));
+                            return ctx.status('No Content');
+                        })
                         .post('/invites', async (ctx) => {
                             const query = inviteCreateBody.safeParse(ctx.body);
                             if (!query.success) {
                                 console.error(query.error);
-                                return ctx.status(400, {
+                                return ctx.status('Bad Request', {
                                     code: 'errors.validationFailed'
                                 });
                             }
@@ -199,7 +258,7 @@ export default new Elysia({prefix: '/channels'})
                                 }).returning())[0];
                             } catch (e) {
                                 console.error(e);
-                                return ctx.status(500);
+                                return ctx.status('Internal Server Error');
                             }
                         })
                 )

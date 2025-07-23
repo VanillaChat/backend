@@ -16,7 +16,7 @@ const ServerCreateSchema = z.object({
 export default new Elysia({ prefix: '/guilds' })
     .guard({
         beforeHandle(ctx) {
-            if (!isAuthenticated(ctx.cookie[Bun.env.NODE_ENV === 'production' ? '__Host-Token' : 'token'])) return ctx.status(401);
+            if (!isAuthenticated(ctx.cookie[Bun.env.NODE_ENV === 'production' ? '__Host-Token' : 'token'])) return ctx.status('Unauthorized');
         }
     }, (app) =>
         app
@@ -32,7 +32,7 @@ export default new Elysia({ prefix: '/guilds' })
                 if (!validatedBody.success) {
                     log('Guilds', `Creating guild ${(ctx.body as any).name} failed for user ${ctx.user!.id}: Validation failed. Stack trace below.`);
                     console.log(validatedBody.error.issues);
-                    return ctx.status(400, {
+                    return ctx.status('Bad Request', {
                         code: 'VALIDATION_FAILED',
                         errors: validatedBody.error.issues.map((issue) => ({
                             code: issue.message,
@@ -43,7 +43,7 @@ export default new Elysia({ prefix: '/guilds' })
                 const [result] = await db.select({ count: count() }).from(guildMembers).where(eq(guildMembers.userId, ctx.user!.id));
                 if (result.count >= Bun.env.USER_GUILD_LIMIT) {
                     log('Guilds', `Creating guild ${validatedBody.data.name} failed for user ${ctx.user!.id}: The user has too many guilds.`);
-                    return ctx.status(403, {
+                    return ctx.status('Forbidden', {
                         code: 'GUILD_LIMIT_EXCEEDED',
                         path: 'global',
                         message: 'app.modals.serverCreate.serverLimitExceeded'
@@ -78,7 +78,7 @@ export default new Elysia({ prefix: '/guilds' })
                     return { guild: guild[0], channels: channel };
                 } catch (e) {
                     console.error(e);
-                    return ctx.status(500);
+                    return ctx.status('Internal Server Error');
                 }
             })
     );

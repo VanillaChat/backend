@@ -10,7 +10,7 @@ import {eq} from "drizzle-orm";
 export default new Elysia({ prefix: '/admin' })
     .guard({
         beforeHandle(ctx) {
-            if (!isAuthenticated(ctx.cookie[Bun.env.NODE_ENV === 'production' ? '__Host-Token' : 'token'])) return ctx.status(401);
+            if (!isAuthenticated(ctx.cookie[Bun.env.NODE_ENV === 'production' ? '__Host-Token' : 'token'])) return ctx.status('Unauthorized');
         }
     }, (app) =>
         app
@@ -25,7 +25,7 @@ export default new Elysia({ prefix: '/admin' })
             })
             .guard({
                 async beforeHandle(ctx) {
-                    if ((ctx.account!.user.flags & UserFlags.ADMIN) !== UserFlags.ADMIN) return ctx.status(403);
+                    if ((ctx.account!.user.flags & UserFlags.ADMIN) !== UserFlags.ADMIN) return ctx.status('Forbidden');
                 }
             })
             .post('/invite-codes', async (ctx) => {
@@ -40,7 +40,7 @@ export default new Elysia({ prefix: '/admin' })
                     return row[0];
                 } catch (e) {
                     console.error(e);
-                    return ctx.status(500);
+                    return ctx.status('Internal Server Error');
                 }
             })
             .delete('/invite-codes/:id', async (ctx) => {
@@ -49,9 +49,9 @@ export default new Elysia({ prefix: '/admin' })
                 });
 
                 if (!code) {
-                    return ctx.status(404);
+                    return ctx.status('Not Found');
                 } else if (code.used) {
-                    return ctx.status(403);
+                    return ctx.status('Forbidden');
                 }
 
                 try {
@@ -64,10 +64,10 @@ export default new Elysia({ prefix: '/admin' })
                             id: ctx.params.id
                         }
                     }));
-                    return ctx.status(204);
+                    return ctx.status('No Content');
                 } catch (err) {
                     console.error(err);
-                    return ctx.status(500, {
+                    return ctx.status('Internal Server Error', {
                         error: err!.toString()
                     });
                 }
