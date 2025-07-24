@@ -235,6 +235,31 @@ export default new Elysia({prefix: '/channels'})
                             }));
                             return ctx.status('No Content');
                         })
+                        .post('/typing', async (ctx) => {
+                            try {
+                                ctx.server?.publish(ctx.member!.guildId, JSON.stringify({
+                                    op: 0,
+                                    t: "TYPING_START",
+                                    d: {
+                                        channelId: ctx.params.id,
+                                        userId: ctx.user!.userId,
+                                        user: {
+                                            ...ctx.user!.user,
+                                            member: {
+                                                nickname: ctx.member!.nickname
+                                            }
+                                        },
+                                        timestamp: Date.now(),
+                                        expiresAt: Date.now() + 10000
+                                    }
+                                }));
+                                
+                                return { success: true };
+                            } catch (e) {
+                                console.error(e);
+                                return ctx.status('Internal Server Error');
+                            }
+                        })
                         .post('/invites', async (ctx) => {
                             const query = inviteCreateBody.safeParse(ctx.body);
                             if (!query.success) {
