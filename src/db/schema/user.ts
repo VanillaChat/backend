@@ -31,7 +31,8 @@ export const users = pgTable('users', {
     createdAt: timestamp('created_at').notNull().defaultNow(),
     bot: boolean('bot').notNull().default(false),
     status: userStatus('status').notNull().default('ONLINE'),
-    flags: integer('flags').notNull().default(0)
+    flags: integer('flags').notNull().default(0),
+    bio: text('bio')
 });
 
 export const usersRelations = relations(users, ({one, many}) => ({
