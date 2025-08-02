@@ -41,6 +41,10 @@ export default new Elysia({ prefix: '/invites' })
                                 }
                             });
                             if (!invite) return ctx.status('Not Found');
+                            const member = await db.query.guildMembers.findFirst({
+                                where: (members, {eq}) => eq(members.userId, ctx.user!.id)
+                            });
+                            if (member) return ctx.status('Conflict');
                             if (invite.uses++ >= invite.maxUses && invite.maxUses > 0) {
                                 await db.delete(invites).where(eq(invites.code, ctx.params.code))
                             }
