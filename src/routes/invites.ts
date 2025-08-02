@@ -42,9 +42,8 @@ export default new Elysia({ prefix: '/invites' })
                             });
                             if (!invite) return ctx.status('Not Found');
                             const member = await db.query.guildMembers.findFirst({
-                                where: (members, {eq}) => eq(members.userId, ctx.user!.id)
+                                where: (members, {eq, and}) => and(eq(members.userId, ctx.user!.id), eq(members.guildId, invite.guildId))
                             });
-                            console.log(member);
                             if (member) return ctx.status('Conflict', {
                                 path: 'invite',
                                 code: 'ALREADY_A_MEMBER',
