@@ -44,7 +44,12 @@ export default new Elysia({ prefix: '/invites' })
                             const member = await db.query.guildMembers.findFirst({
                                 where: (members, {eq}) => eq(members.userId, ctx.user!.id)
                             });
-                            if (member) return ctx.status('Conflict');
+                            console.log(member);
+                            if (member) return ctx.status('Conflict', {
+                                path: 'invite',
+                                code: 'ALREADY_A_MEMBER',
+                                message: 'errors.serverCreation.alreadyAMember'
+                            });
                             if (invite.uses++ >= invite.maxUses && invite.maxUses > 0) {
                                 await db.delete(invites).where(eq(invites.code, ctx.params.code))
                             }
