@@ -84,7 +84,6 @@ export default new Elysia({ prefix: '/invites' })
                                 guildId: invite.guildId,
                                 userId: ctx.user!.id
                             });
-                            // await setTimeout(1000);
                             const ws = connectedUsers.get(ctx.user!.id);
                             ctx.server!.publish(invite.guildId, JSON.stringify({
                                 op: 0,
