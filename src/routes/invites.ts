@@ -6,6 +6,34 @@ import {eq} from "drizzle-orm";
 import {connectedUsers} from "../websocket";
 
 export default new Elysia({ prefix: '/invites' })
+    .get('/:code', async (ctx) => {
+        const invite = await db.query.invites.findFirst({
+            where: (invites, {eq}) => eq(invites.code, ctx.params.code),
+            with: {
+                guild: true,
+                creator: true,
+                channel: true
+            }
+        });
+        if (!invite) return ctx.status('Not Found');
+        return {
+            type: 0,
+            code: invite.code,
+            inviter: invite.creator ?? null,
+            guild: {
+                id: invite.guildId,
+                name: invite.guild.name,
+                brief: invite.guild.brief,
+                icon: invite.guild.icon
+            },
+            guildId: invite.guildId,
+            channel: {
+                id: invite.channelId,
+                type: 0,
+                name: invite.channel.name
+            }
+        }
+    })
     .guard({
         beforeHandle(ctx) {
             if (!isAuthenticated(ctx.cookie[Bun.env.NODE_ENV === 'production' ? '__Host-Token' : 'token'])) return ctx.status('Unauthorized');

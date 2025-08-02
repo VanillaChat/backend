@@ -1,4 +1,4 @@
-import {integer, pgTable, serial, text, timestamp} from "drizzle-orm/pg-core";
+import {boolean, integer, pgTable, serial, text, timestamp} from "drizzle-orm/pg-core";
 import {relations} from "drizzle-orm";
 import {users} from "./user";
 import {messages} from "./message";
@@ -65,7 +65,8 @@ export const invites = pgTable('guild_invites', {
     uses: integer('uses').notNull().default(0),
     maxUses: integer('max_uses').notNull().default(0),
     creatorId: text('creator_id').references(() => users.id, { onDelete: 'no action' }),
-    channelId: text('channel_id').notNull().references(() => channels.id, { onDelete: 'cascade' })
+    channelId: text('channel_id').notNull().references(() => channels.id, { onDelete: 'cascade' }),
+    vanity: boolean('vanity').notNull().default(false)
 });
 
 export const invitesRelations = relations(invites, ({one}) => ({
