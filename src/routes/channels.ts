@@ -79,27 +79,30 @@ export default new Elysia({prefix: '/channels'})
                                     user: true
                                 }
                             });
-                            const guildMember = await db.query.guildMembers.findFirst({
-                                where: (guildMembers, {eq}) => eq(guildMembers.userId, user!.id),
-                                with: {
-                                    guild: true
-                                }
-                            });
-
+                            
                             const channel = await db.query.channels.findFirst({
                                 where: (channels, {eq}) => eq(channels.id, ctx.params.id),
                                 with: {
                                     guild: true
                                 }
                             });
-
-                            console.log(channel);
+                            
+                            if (!channel) {
+                                return {user, member: null, channel: null, guild: null};
+                            }
+                            
+                            const guildMember = await db.query.guildMembers.findFirst({
+                                where: (guildMembers, {eq, and}) => and(
+                                    eq(guildMembers.userId, user!.id),
+                                    eq(guildMembers.guildId, channel.guildId)
+                                )
+                            });
 
                             if (guildMember) {
-                                const { guild, ...member } = guildMember;
-                                return { user, member, guild, channel };
+                                return { user, member: guildMember, guild: channel.guild, channel };
                             }
-                            return {user, member: null, channel: null};
+
+                            return {user, member: null, channel, guild: null};
                         })
                         .guard({
                             async beforeHandle(ctx) {
@@ -111,6 +114,7 @@ export default new Elysia({prefix: '/channels'})
                                 }
                                 if (!ctx.channel) {
                                     console.log("no channel");
+                                    // @ts-expect-error
                                     return ctx.status('Not Found', {
                                         code: 'messages.errors.channelNotFound'
                                     });
@@ -192,7 +196,7 @@ export default new Elysia({prefix: '/channels'})
                                 });
                             }
                             const message = await db.query.messages.findFirst({
-                               where: (messages, {eq}) => eq(messages.id, ctx.params.messageId)
+                                where: (messages, {eq}) => eq(messages.id, ctx.params.messageId)
                             });
                             if (!message) return ctx.status('Not Found', {
                                 code: 'messages.errors.messageNotFound'
@@ -224,7 +228,7 @@ export default new Elysia({prefix: '/channels'})
                                 code: 'messages.errors.messageNotFound'
                             });
                             if (ctx.user!.userId !== message.authorId) return ctx.status('Forbidden', {
-                               code: 'messages.errors.forbidden'
+                                code: 'messages.errors.forbidden'
                             });
                             await db
                                 .delete(messages)
@@ -258,7 +262,7 @@ export default new Elysia({prefix: '/channels'})
                                         expiresAt: Date.now() + 10000
                                     }
                                 }));
-                                
+
                                 return { success: true };
                             } catch (e) {
                                 console.error(e);
