@@ -87,8 +87,13 @@ export default new Elysia({prefix: '/channels'})
                             });
 
                             const channel = await db.query.channels.findFirst({
-                                where: (channels, {eq}) => eq(channels.id, ctx.params.id)
+                                where: (channels, {eq}) => eq(channels.id, ctx.params.id),
+                                with: {
+                                    guild: true
+                                }
                             });
+
+                            console.log(channel);
 
                             if (guildMember) {
                                 const { guild, ...member } = guildMember;
