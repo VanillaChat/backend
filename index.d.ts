@@ -7,5 +7,7 @@ declare module "bun" {
         USER_GUILD_LIMIT: number;
         VERBOSE: boolean;
         CORS_ORIGINS: string;
+        MAX_AVATAR_SIZE: string;
+        MAX_BANNER_SIZE: string;
     }
 }

@@ -10,7 +10,9 @@ import crypto from "node:crypto";
 import rateLimit from "../middleware/rateLimit";
 
 const AVATARS_DIR = join(import.meta.dir, '..', '..', '..', 'cdn', 'avatars');
+const BANNERS_DIR = join(import.meta.dir, '..', '..', '..', 'cdn', 'banners');
 await mkdir(AVATARS_DIR, { recursive: true }).catch(console.error);
+await mkdir(BANNERS_DIR, { recursive: true }).catch(console.error);
 
 export default new Elysia({prefix: '/users'})
     .guard({
@@ -37,14 +39,15 @@ export default new Elysia({prefix: '/users'})
                         })
                         .patch('/', async ({ user, guildIds, body, status, server }) => {
                             try {
-                                const { username, tag, avatar: base64Avatar, password } = body as {
+                                const { username, tag, avatar: base64Avatar, banner: base64Banner, password } = body as {
                                     username?: string;
                                     tag?: string;
                                     avatar?: string;
+                                    banner?: string;
                                     password?: string;
                                 };
 
-                                if (!user?.user.bot && !base64Avatar) {
+                                if (!user?.user.bot && !base64Avatar && !base64Banner) {
                                     if (!password) return status('Bad Request', {
                                         error: 'Password is required'
                                     });
@@ -55,9 +58,9 @@ export default new Elysia({prefix: '/users'})
                                     });
                                 }
 
-                                if (!username && !tag && !base64Avatar) {
+                                if (!username && !tag && !base64Avatar && !base64Banner) {
                                     return status('Bad Request', {
-                                        error: 'At least one field (username, tag, or avatar) is required'
+                                        error: 'At least one field (username, tag, avatar or banner) is required'
                                     })
                                 }
 
@@ -74,7 +77,7 @@ export default new Elysia({prefix: '/users'})
                                         }
 
                                         const buffer = Buffer.from(base64Data, 'base64');
-                                        const maxSize = parseInt(Bun.env.MAX_AVATAR_SIZE || '10000000'); // Default 5MB
+                                        const maxSize = parseInt(Bun.env.MAX_AVATAR_SIZE || '10000000'); // Default 10MB
                                         
                                         if (buffer.length > maxSize) {
                                             return status('Payload Too Large', {
@@ -83,9 +86,10 @@ export default new Elysia({prefix: '/users'})
                                         }
 
                                         const processedBuffer = await sharp(buffer)
-                                            .resize(256, 256, { 
+                                            .ensureAlpha()
+                                            .resize(256, 256, {
                                                 fit: 'cover', 
-                                                withoutEnlargement: true 
+                                                withoutEnlargement: true
                                             })
                                             .webp({ quality: 80 })
                                             .toBuffer();
@@ -99,9 +103,10 @@ export default new Elysia({prefix: '/users'})
                                         await mkdir(userDir, { recursive: true });
 
                                         if (user!.user.avatar) {
-                                            const oldAvatarPath = join(process.cwd(), 'public', user!.user.avatar);
+                                            const oldAvatarPath = join(AVATARS_DIR, user!.user.avatar);
                                             try {
-                                                await Bun.file(oldAvatarPath).unlink();
+                                                const file = await Bun.file(oldAvatarPath);
+                                                if (await file.exists()) await file.unlink();
 
                                                 try {
                                                     const files = await readdir(userDir);
@@ -122,6 +127,68 @@ export default new Elysia({prefix: '/users'})
                                         console.error('Error processing avatar:', error);
                                         return status('Bad Request', {
                                             error: 'Failed to process avatar image'
+                                        });
+                                    }
+                                }
+
+                                if (base64Banner) {
+                                    try {
+                                        const base64Data = base64Banner.split(';base64,').pop();
+                                        if (!base64Data) {
+                                            throw new Error('Invalid base64 data');
+                                        }
+
+                                        const buffer = Buffer.from(base64Data, 'base64');
+                                        const maxSize = parseInt(Bun.env.MAX_BANNER_SIZE || '25000000'); // Default 25MB
+
+                                        if (buffer.length > maxSize) {
+                                            return status('Payload Too Large', {
+                                                error: `Banner size exceeds maximum allowed size of ${maxSize / 1024 / 1024}MB`
+                                            });
+                                        }
+
+                                        const processedBuffer = await sharp(buffer)
+                                            .ensureAlpha()
+                                            .resize(342, 130, {
+                                                fit: 'cover',
+                                                withoutEnlargement: true
+                                            })
+                                            .webp({ quality: 80 })
+                                            .toBuffer();
+
+                                        const hash = crypto.createHash('sha256')
+                                            .update(processedBuffer)
+                                            .digest('hex')
+                                            .substring(0, 16);
+
+                                        const userDir = join(BANNERS_DIR, user!.user.id);
+                                        await mkdir(userDir, { recursive: true });
+
+                                        if (user!.user.banner) {
+                                            const oldBannerPath = join(BANNERS_DIR, user!.user.banner);
+                                            try {
+                                                const file = await Bun.file(oldBannerPath);
+                                                if (await file.exists()) await file.unlink();
+
+                                                try {
+                                                    const files = await readdir(userDir);
+                                                    if (files.length === 0) {
+                                                        await rmdir(userDir);
+                                                    }
+                                                } catch (error) {
+                                                    console.warn('Failed to check/remove user banner directory:', error);
+                                                }
+                                            } catch (error) {
+                                                console.warn('Failed to remove old banner:', error);
+                                            }
+                                        }
+
+                                        await Bun.write(join(userDir, `${hash}.webp`), processedBuffer);
+                                        updates.banner = hash;
+                                    } catch (error) {
+                                        console.error('Error processing banner:', error);
+                                        return status('Bad Request', {
+                                            error: 'Failed to process banner image'
                                         });
                                     }
                                 }
@@ -161,7 +228,7 @@ export default new Elysia({prefix: '/users'})
                             async beforeHandle(ctx) {
                                 const { limited, retryAfter } = await rateLimit(
                                     ctx.server!.requestIP(ctx.request)!.address,
-                                    2,
+                                    10,
                                     3_600_000,
                                     `profile-change:${ctx.user!.id}`
                                 );
