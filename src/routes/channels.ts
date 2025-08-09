@@ -8,6 +8,7 @@ import {and, eq, gt, InferSelectModel, lt} from "drizzle-orm";
 import {invites} from "../db/schema/guild";
 import * as randomstring from "randomstring";
 import rateLimit from "../middleware/rateLimit";
+import {ip} from "elysia-ip";
 
 const messageCreateBody = z.object({
     content: z.string().min(1).max(2000),
@@ -64,6 +65,7 @@ async function getMessages(channel: string, options: GetMessagesOptions): Promis
 }
 
 export default new Elysia({prefix: '/channels'})
+    .use(ip())
     .guard({
             beforeHandle(ctx) {
                 if (!isAuthenticated(ctx.cookie[Bun.env.NODE_ENV === 'production' ? '__Host-Token' : 'token'])) return ctx.status('Unauthorized');
@@ -120,7 +122,7 @@ export default new Elysia({prefix: '/channels'})
                                     });
                                 }
                                 const { limited, retryAfter } = await rateLimit(
-                                    ctx.server!.requestIP(ctx.request)!.address,
+                                    ctx.ip,
                                     ctx.channel!.rateLimitPerUser > 0 ? 1 : 50,
                                     ctx.channel!.rateLimitPerUser > 0 ? ctx.channel!.rateLimitPerUser : 1,
                                     `messages::${ctx.channel!.id}`

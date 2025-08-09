@@ -8,6 +8,7 @@ import {mkdir, readdir, rmdir} from "fs/promises";
 import {join} from "path";
 import crypto from "node:crypto";
 import rateLimit from "../middleware/rateLimit";
+import {ip} from "elysia-ip";
 
 const AVATARS_DIR = join(import.meta.dir, '..', '..', '..', 'cdn', 'avatars');
 const BANNERS_DIR = join(import.meta.dir, '..', '..', '..', 'cdn', 'banners');
@@ -15,6 +16,7 @@ await mkdir(AVATARS_DIR, { recursive: true }).catch(console.error);
 await mkdir(BANNERS_DIR, { recursive: true }).catch(console.error);
 
 export default new Elysia({prefix: '/users'})
+    .use(ip())
     .guard({
             beforeHandle(ctx) {
                 if (!isAuthenticated(ctx.cookie[Bun.env.NODE_ENV === 'production' ? '__Host-Token' : 'token'])) return ctx.status('Unauthorized');
@@ -97,7 +99,7 @@ export default new Elysia({prefix: '/users'})
                                         const hash = crypto.createHash('sha256')
                                             .update(processedBuffer)
                                             .digest('hex')
-                                            .substring(0, 16);
+                                            .substring(0, 64);
 
                                         const userDir = join(AVATARS_DIR, user!.user.id);
                                         await mkdir(userDir, { recursive: true });
@@ -159,7 +161,7 @@ export default new Elysia({prefix: '/users'})
                                         const hash = crypto.createHash('sha256')
                                             .update(processedBuffer)
                                             .digest('hex')
-                                            .substring(0, 16);
+                                            .substring(0, 64);
 
                                         const userDir = join(BANNERS_DIR, user!.user.id);
                                         await mkdir(userDir, { recursive: true });
@@ -227,7 +229,7 @@ export default new Elysia({prefix: '/users'})
                         }, {
                             async beforeHandle(ctx) {
                                 const { limited, retryAfter } = await rateLimit(
-                                    ctx.server!.requestIP(ctx.request)!.address,
+                                    ctx.ip,
                                     10,
                                     3_600_000,
                                     `profile-change:${ctx.user!.id}`

@@ -34,7 +34,6 @@ const RegisterSchema = LoginSchema.extend({
 });
 
 const auth = new Elysia({ prefix: '/auth' })
-    // .use(rateLimit())
     .post('/login', async ({body, status, cookie}) => {
         log('Auth', `Begin authentication user ${(body as any).email}.`);
         const validatedBody = LoginSchema.safeParse(body);
