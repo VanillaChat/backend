@@ -41,9 +41,10 @@ export default new Elysia({prefix: '/users'})
                         })
                         .patch('/', async ({ user, guildIds, body, status, server }) => {
                             try {
-                                const { username, tag, avatar: base64Avatar, banner: base64Banner, password } = body as {
+                                const { username, tag, bio, avatar: base64Avatar, banner: base64Banner, password } = body as {
                                     username?: string;
                                     tag?: string;
+                                    bio?: string;
                                     avatar?: string;
                                     banner?: string;
                                     password?: string;
@@ -60,7 +61,7 @@ export default new Elysia({prefix: '/users'})
                                     });
                                 }
 
-                                if (!username && !tag && !base64Avatar && !base64Banner) {
+                                if (!username && !tag && !bio && !base64Avatar && !base64Banner) {
                                     return status('Bad Request', {
                                         error: 'At least one field (username, tag, avatar or banner) is required'
                                     })
@@ -70,6 +71,7 @@ export default new Elysia({prefix: '/users'})
 
                                 if (username) updates.username = username;
                                 if (tag) updates.tag = tag;
+                                if (bio) updates.bio = bio;
 
                                 if (base64Avatar) {
                                     try {
