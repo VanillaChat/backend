@@ -2,7 +2,7 @@ export default async function rateLimit(ip: string, limit: number = 100, windowM
     const _key = `rate-limit:${ip}:${key}`;
     const count = await Bun.redis.incr(_key);
 
-    if (count === 1) await Bun.redis.expire(_key, windowMs / 1000);
+    if (count === 1) await Bun.redis.expire(_key, Math.trunc(windowMs / 1000));
     const ttl = await Bun.redis.ttl(_key);
 
     return {
