@@ -121,6 +121,7 @@ export default new Elysia({prefix: '/channels'})
                                         code: 'messages.errors.channelNotFound'
                                     });
                                 }
+                                console.log(ctx.ip);
                                 const { limited, retryAfter } = await rateLimit(
                                     ctx.ip,
                                     ctx.channel!.rateLimitPerUser > 0 ? 1 : 50,
