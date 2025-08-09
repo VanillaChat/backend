@@ -121,16 +121,6 @@ export default new Elysia({prefix: '/channels'})
                                         code: 'messages.errors.channelNotFound'
                                     });
                                 }
-                                const { limited, retryAfter } = await rateLimit(
-                                    ctx.ip,
-                                    ctx.channel!.rateLimitPerUser > 0 ? 1 : 50,
-                                    ctx.channel!.rateLimitPerUser > 0 ? ctx.channel!.rateLimitPerUser : 1,
-                                    `messages::${ctx.channel!.id}`
-                                );
-                                if (limited) return ctx.status('Too Many Requests', {
-                                    message: 'You are being rate limited.',
-                                    retryAfter
-                                });
                             }
                         })
                         .post('/messages', async (ctx) => {
@@ -178,6 +168,19 @@ export default new Elysia({prefix: '/channels'})
                                     e
                                 });
                             }
+                        }, {
+                            beforeHandle: async (ctx) => {
+                                const { limited, retryAfter } = await rateLimit(
+                                    ctx.ip,
+                                    ctx.channel!.rateLimitPerUser > 0 ? 1 : 50,
+                                    ctx.channel!.rateLimitPerUser > 0 ? ctx.channel!.rateLimitPerUser : 1,
+                                    `messages::${ctx.channel!.id}`
+                                );
+                                if (limited) return ctx.status('Too Many Requests', {
+                                    message: 'You are being rate limited.',
+                                    retryAfter
+                                });
+                            }
                         })
                         .get('/messages', async (ctx) => {
                             const query = messageRetrieveQuery.safeParse(ctx.query);
@@ -221,6 +224,19 @@ export default new Elysia({prefix: '/channels'})
                                 d: updatedMessage[0]
                             }));
                             return updatedMessage[0];
+                        }, {
+                            beforeHandle: async (ctx) => {
+                                const { limited, retryAfter } = await rateLimit(
+                                    ctx.ip,
+                                    ctx.channel!.rateLimitPerUser > 0 ? 1 : 50,
+                                    ctx.channel!.rateLimitPerUser > 0 ? ctx.channel!.rateLimitPerUser : 1,
+                                    `messages::${ctx.channel!.id}`
+                                );
+                                if (limited) return ctx.status('Too Many Requests', {
+                                    message: 'You are being rate limited.',
+                                    retryAfter
+                                });
+                            }
                         })
                         .delete('/messages/:messageId', async (ctx) => {
                             const message = await db.query.messages.findFirst({
