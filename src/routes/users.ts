@@ -50,11 +50,24 @@ export default new Elysia({prefix: '/users'})
                                 await db.update(accountSettings)
                                     .set({ theme })
                                     .where(eq(accountSettings.accountId, user!.user.id));
-                                return { message: 'User settings updated' };
+                                return status('No Content');
                             } catch (error) {
                                 console.error('Error updating user settings:', error);
                                 return status('Internal Server Error', {
                                     error: 'Internal server error'
+                                });
+                            }
+                        }, {
+                            async beforeHandle(ctx) {
+                                const { limited, retryAfter } = await rateLimit(
+                                    ctx.ip,
+                                    10,
+                                    3_600_000,
+                                    `profile-change:${ctx.user!.id}`
+                                );
+                                if (limited) return ctx.status('Too Many Requests', {
+                                    message: 'You are being rate limited.',
+                                    retryAfter
                                 });
                             }
                         })
