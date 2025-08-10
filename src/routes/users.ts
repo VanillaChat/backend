@@ -61,8 +61,8 @@ export default new Elysia({prefix: '/users'})
                             async beforeHandle(ctx) {
                                 const { limited, retryAfter } = await rateLimit(
                                     ctx.ip,
-                                    10,
-                                    3_600_000,
+                                    25,
+                                    120_000,
                                     `profile-change:${ctx.user!.id}`
                                 );
                                 if (limited) return ctx.status('Too Many Requests', {
