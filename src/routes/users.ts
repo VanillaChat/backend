@@ -63,7 +63,7 @@ export default new Elysia({prefix: '/users'})
                                     ctx.ip,
                                     25,
                                     120_000,
-                                    `profile-change:${ctx.user!.id}`
+                                    `settings-change:${ctx.user!.id}`
                                 );
                                 if (limited) return ctx.status('Too Many Requests', {
                                     message: 'You are being rate limited.',
