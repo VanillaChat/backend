@@ -66,7 +66,9 @@ export const identifyHandler = async (ws: WS) => {
                 locale: account.locale,
                 email: account.email
             },
-            settings: account.settings,
+            settings: {
+                theme: account.settings?.theme ?? 'light'
+            },
             user: account.user,
             guilds: members.map(member => member.guild)
         }
