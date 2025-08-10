@@ -101,6 +101,9 @@ const auth = new Elysia({ prefix: '/auth' })
             }
         });
         if (!account) return ctx.status('Unauthorized');
+        const settings = await db.query.accountSettings.findFirst({
+            where: (accountSettings, {eq}) => eq(accountSettings.accountId, account.id),
+        });
         return {
             user: account.user,
             account: {
@@ -109,6 +112,9 @@ const auth = new Elysia({ prefix: '/auth' })
                 locale: account.locale,
                 email: account.email
             },
+            settings: {
+                theme: settings?.theme ?? 'light'
+            }
         }
     })
     .post('/logout', async (ctx) => {
