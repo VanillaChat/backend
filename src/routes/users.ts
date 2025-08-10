@@ -1,7 +1,7 @@
 import {Elysia} from "elysia";
 import isAuthenticated from "../middleware/isAuthenticated";
 import {db} from "../db";
-import {users} from "../db/schema/user";
+import {accountSettings, users} from "../db/schema/user";
 import {eq} from "drizzle-orm";
 import sharp from "sharp";
 import {mkdir, readdir, rmdir} from "fs/promises";
@@ -38,6 +38,25 @@ export default new Elysia({prefix: '/users'})
                             });
 
                             return {user, guildIds: servers.map(g => g.guildId)};
+                        })
+                        .patch('/user-settings', async ({ user, body, status }) => {
+                            try {
+                                const { theme } = body as {
+                                    theme?: "LIGHT" | "DARK" | "DIM";
+                                };
+                                if (!theme) return status('Bad Request', {
+                                    error: 'Theme is required'
+                                });
+                                await db.update(accountSettings)
+                                    .set({ theme })
+                                    .where(eq(accountSettings.accountId, user!.user.id));
+                                return { message: 'User settings updated' };
+                            } catch (error) {
+                                console.error('Error updating user settings:', error);
+                                return status('Internal Server Error', {
+                                    error: 'Internal server error'
+                                });
+                            }
                         })
                         .patch('/', async ({ user, guildIds, body, status, server }) => {
                             try {
