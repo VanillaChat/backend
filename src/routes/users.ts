@@ -97,7 +97,7 @@ export default new Elysia({prefix: '/users'})
                                     password?: string;
                                 };
 
-                                if (!user?.user.bot && !base64Avatar && !base64Banner) {
+                                if (!user?.user.bot && [base64Avatar, base64Banner].every(x => typeof x === "undefined")) {
                                     if (!password) return status('Bad Request', {
                                         error: 'Password is required'
                                     });
@@ -108,7 +108,7 @@ export default new Elysia({prefix: '/users'})
                                     });
                                 }
 
-                                if (!username && !tag && !bio && !base64Avatar && !base64Banner) {
+                                if (!username && !tag && !bio && [base64Avatar, base64Banner].every(x => typeof x === "undefined")) {
                                     return status('Bad Request', {
                                         error: 'At least one field (username, tag, avatar or banner) is required'
                                     })
@@ -180,6 +180,17 @@ export default new Elysia({prefix: '/users'})
                                             error: 'Failed to process avatar image'
                                         });
                                     }
+                                } else if (base64Avatar === null) {
+                                    const userDir = join(AVATARS_DIR, user!.user.id);
+                                    try {
+                                        const files = await readdir(userDir);
+                                        if (files.length === 0) {
+                                            await rmdir(userDir);
+                                        }
+                                    } catch (error) {
+                                        console.warn('Failed to check/remove user avatar directory:', error);
+                                    }
+                                    updates.avatar = null;
                                 }
 
                                 if (base64Banner) {
@@ -242,6 +253,17 @@ export default new Elysia({prefix: '/users'})
                                             error: 'Failed to process banner image'
                                         });
                                     }
+                                } else if (base64Banner === null) {
+                                    const userDir = join(BANNERS_DIR, user!.user.id);
+                                    try {
+                                        const files = await readdir(userDir);
+                                        if (files.length === 0) {
+                                            await rmdir(userDir);
+                                        }
+                                    } catch (error) {
+                                        console.warn('Failed to check/remove user banner directory:', error);
+                                    }
+                                    updates.banner = null;
                                 }
 
                                 if (Object.keys(updates).length > 0) {
