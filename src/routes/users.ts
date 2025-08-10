@@ -41,16 +41,31 @@ export default new Elysia({prefix: '/users'})
                         })
                         .patch('/user-settings', async ({ user, body, status }) => {
                             try {
-                                const { theme } = body as {
+                                const { theme, compactMode, compactShowAvatars } = body as {
                                     theme?: "LIGHT" | "DARK" | "DIM";
+                                    compactMode?: boolean;
+                                    compactShowAvatars?: boolean
                                 };
-                                if (!theme) return status('Bad Request', {
-                                    error: 'Theme is required'
+                                if ([theme, compactMode, compactShowAvatars].every(x => typeof x === "undefined")) return status('Bad Request', {
+                                    error: 'At least one field (theme, compactMode, compactShowAvatars) is required'
                                 });
-                                await db.update(accountSettings)
-                                    .set({ theme })
-                                    .where(eq(accountSettings.accountId, user!.user.id));
-                                return status('No Content');
+
+                                const updates: any = {};
+
+                                if (theme) updates.theme = theme;
+                                if (compactMode !== undefined) updates.compactMode = compactMode;
+                                if (compactShowAvatars !== undefined) updates.compactShowAvatars = compactShowAvatars;
+
+                                if (Object.keys(updates).length > 0) {
+                                    await db.update(accountSettings)
+                                        .set(updates)
+                                        .where(eq(accountSettings.accountId, user!.user.id));
+                                    return status('No Content');
+                                }
+
+                                return status('Bad Request', {
+                                    error: 'At least one field (theme, compactMode, compactShowAvatars) is required'
+                                });
                             } catch (error) {
                                 console.error('Error updating user settings:', error);
                                 return status('Internal Server Error', {

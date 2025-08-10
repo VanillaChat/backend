@@ -67,7 +67,9 @@ export const identifyHandler = async (ws: WS) => {
                 email: account.email
             },
             settings: {
-                theme: account.settings?.theme ?? 'light'
+                theme: account.settings?.theme ?? 'light',
+                compactMode: account.settings?.compactMode ?? false,
+                compactShowAvatars: account.settings?.compactShowAvatars ?? true
             },
             user: account.user,
             guilds: members.map(member => member.guild)

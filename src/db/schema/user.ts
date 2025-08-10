@@ -63,7 +63,9 @@ export const theme = pgEnum('Theme', ['LIGHT', 'DARK', 'DIM']);
 export const accountSettings = pgTable('account_settings', {
     id: serial('id').primaryKey().notNull(),
     accountId: text('account_id').unique(),
-    theme: theme('theme').notNull().default('LIGHT')
+    theme: theme('theme').notNull().default('LIGHT'),
+    compactMode: boolean('compact_mode').notNull().default(false),
+    compactShowAvatars: boolean('compact_show_avatars').notNull().default(true),
 });
 
 export const accountSettingsRelations = relations(accountSettings, ({one}) => ({
