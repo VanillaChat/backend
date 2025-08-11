@@ -26,9 +26,8 @@ const app = new Elysia()
     .use(cdn)
     .use(users)
     .use(websocket)
-    .get('/', () => {
-        return "Hello World!";
-    })
+    .all("/health", () => "OK")
+    .all('/', () => "OK")
     .all('*', (ctx: Context) => ctx.status('Not Found', '404 Not Found!'))
     .listen(3000);
 
