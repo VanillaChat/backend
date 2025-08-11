@@ -1,3 +1,4 @@
+import Valkey from "iovalkey";
 import {Context, Elysia} from "elysia";
 import {logger} from "@chneau/elysia-logger";
 import {cors} from "@elysiajs/cors";
@@ -9,6 +10,8 @@ import invites from "./routes/invites";
 import admin from "./routes/admin";
 import cdn from "./routes/cdn";
 import users from "./routes/users";
+
+export const valkey = new Valkey(Bun.env.REDIS_URL);
 
 const app = new Elysia()
     .use(logger())
