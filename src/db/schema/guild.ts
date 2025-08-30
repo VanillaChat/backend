@@ -39,6 +39,7 @@ export const guildMembers = pgTable("guild_members", {
 		.notNull()
 		.references(() => users.id, { onDelete: "cascade" }),
 	nickname: text("nickname"),
+	joinedAt: timestamp("joined_at").notNull().defaultNow(),
 });
 
 export const guildMembersRelations = relations(guildMembers, ({ one }) => ({
