@@ -152,8 +152,7 @@ export default new Elysia({ prefix: "/users" }).use(ip()).guard(
 							path: "password",
 						});
 
-					// 7 * 24 * 60 *
-					const deleteAt = Date.now() + 10 * 1000;
+					const deleteAt = Date.now() + 7 * 24 * 60 * 60 * 1000;
 					const job = await deleteAccountQueue.add(
 						"delete-account",
 						{
@@ -161,7 +160,7 @@ export default new Elysia({ prefix: "/users" }).use(ip()).guard(
 							deleteMessages,
 						},
 						{
-							delay: 10 * 1000,
+							delay: 7 * 24 * 60 * 60 * 1000,
 						},
 					);
 
@@ -218,11 +217,18 @@ export default new Elysia({ prefix: "/users" }).use(ip()).guard(
 							),
 						with: {
 							user: true,
+							guild: true,
 						},
 					});
 					if (!member)
 						return ctx.status("Not Found", {
 							error: "You are not a member of this guild.",
+						});
+
+					if (ctx.user?.id === member.guild.ownerId)
+						return ctx.status("Forbidden", {
+							error:
+								"You can't leave the server as its owner. Please transfer ownership or delete the server first.",
 						});
 
 					try {
