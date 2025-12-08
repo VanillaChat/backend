@@ -1,0 +1,41 @@
+[package]
+name = "vanilla-backend"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+axum = { version = "0.8.7", features = ["ws", "macros"] }
+axum-extra = { version = "0.10.0", features = ["cookie"] }
+tokio = { version = "1.48.0", features = ["full"] }
+tower = "0.5.2"
+tower-http = { version = "0.6.7", features = ["trace", "cors", "compression-zstd", "fs"] }
+
+byteorm-client = { path = "./generated" }
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.145"
+validator = { version = "0.20.0", features = ["derive"] }
+
+redis = { version = "1.0.0", features = ["tokio-comp", "connection-manager"] }
+
+argon2 = "0.5.3"
+rand = { version = "0.8", features = ["getrandom"] }
+password-hash = { version = "0.5", features = ["rand_core"] }
+anyhow = "1.0.100"
+
+tracing = "0.1.43"
+tracing-subscriber = { version = "0.3.22", features = ["env-filter"] }
+
+dotenvy = "0.15.7"
+chrono = { version = "0.4", features = ["serde"] }
+futures-util = { version = "0.3", features = ["sink"] }
+base64 = "0.22"
+sha2 = "0.10"
+hmac = "0.12"
+hex = "0.4"
+snowflake = "1.3"
+thiserror = "2.0"
+image = "0.25"
+tokio-tungstenite = "0.26"
+dashmap = "6.1"
+time = "0.3"
+tokio-postgres = "0.7"
