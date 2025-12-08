@@ -131,7 +131,7 @@ async fn get_messages(
         .map_err(|e| AppError::InternalServerError(e.to_string()))?;
     
     let mut sql = String::from(
-        "SELECT m.*, u.id as user_id, u.username, u.tag, u.avatar, u.bot, u.status, u.flags, u.bio, u.banner, u.created_at as user_created_at
+        "SELECT m.*, u.id as user_id, u.username, u.tag, u.avatar, u.bot, CAST(u.status AS TEXT) as status, u.flags, u.bio, u.banner, u.created_at as user_created_at
          FROM messages m
          JOIN users u ON m.author_id = u.id
          WHERE m.channel_id = $1"
@@ -224,34 +224,35 @@ async fn create_message(
     }
     
     let message_id = generate_snowflake();
+    let nonce = body.nonce.clone().unwrap_or_else(|| "0".to_string());
     
-    state.db.messages
-        .create(|c| c
-            .set_id(message_id.clone())
-            .set_author_id(account.id.clone())
-            .set_channel_id(channel_id.clone())
-            .set_guild_id(member.guild_id.clone())
-            .set_content(Some(body.content.clone()))
-            .set_message_type("DEFAULT".to_string())
-            .set_nonce(body.nonce.clone().unwrap_or_else(|| "0".to_string()))
-        )
-        .await?;
+    let client = state.db.get_client().await
+        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
     
-    let message = state.db.messages
-        .find_first(|q| q.where_id(message_id.clone()))
-        .await?
-        .ok_or(AppError::InternalServerError("Failed to create message".to_string()))?;
+    let sql = "INSERT INTO messages (id, author_id, channel_id, guild_id, content, message_type, nonce) 
+               VALUES ($1, $2, $3, $4, $5, $6::TEXT::MessageType, $7) 
+               RETURNING id, author_id, channel_id, guild_id, content, created_at, updated_at, CAST(message_type AS TEXT) as message_type, nonce";
+    
+    let row = client.query_one(sql, &[
+        &message_id,
+        &account.id,
+        &channel_id,
+        &member.guild_id,
+        &body.content,
+        &"DEFAULT",
+        &nonce,
+    ]).await.map_err(|e| AppError::InternalServerError(e.to_string()))?;
     
     let response = Message {
-        id: message.id.clone(),
-        author_id: message.author_id.clone(),
-        channel_id: message.channel_id.clone(),
-        guild_id: message.guild_id.clone(),
-        content: message.content.clone(),
-        created_at: Some(message.created_at),
-        updated_at: message.updated_at,
-        message_type: message.message_type.clone(),
-        nonce: Some(message.nonce.clone()),
+        id: row.get("id"),
+        author_id: row.get("author_id"),
+        channel_id: row.get("channel_id"),
+        guild_id: row.get("guild_id"),
+        content: row.get("content"),
+        created_at: row.get("created_at"),
+        updated_at: row.get("updated_at"),
+        message_type: row.get("message_type"),
+        nonce: row.get("nonce"),
         author: Some(MessageAuthor {
             id: user.id.clone(),
             username: user.username.clone(),

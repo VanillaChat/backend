@@ -35,12 +35,18 @@ pub async fn handle(
         Err(_) => return,
     };
     
-    let _ = client
+    let result = client
         .execute(
-            "UPDATE users SET status = $1 WHERE id = $2",
+            "UPDATE users SET status = $1::TEXT::UserStatus WHERE id = $2",
             &[&new_status, &user_id],
         )
         .await;
+        
+    if let Err(e) = result {
+        tracing::error!("Failed to update presence in DB: {:?}", e);
+    } else {
+        tracing::info!("Presence updated in DB for user {}", user_id);
+    }
     
     for room in rooms {
         if room == "admins" {
