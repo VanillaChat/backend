@@ -9,10 +9,14 @@ pub async fn handle(
     rooms: &[String],
     data: Option<serde_json::Value>,
 ) {
+    tracing::info!("PRESENCE HANDLE: user_id={}, data={:?}", user_id, data);
+    
     let new_status = data
         .and_then(|d| d.get("status").cloned())
         .and_then(|s| s.as_str().map(|s| s.to_string()))
         .unwrap_or_else(|| "ONLINE".to_string());
+    
+    tracing::info!("PRESENCE: new_status={}", new_status);
     
     let user = match state.db.users
         .find_first(|q| q.where_id(user_id.to_string()))
