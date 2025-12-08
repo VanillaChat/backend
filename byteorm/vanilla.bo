@@ -103,3 +103,15 @@ model Messages {
     message_type MessageType @default(DEFAULT)
     nonce       Text        @default('0')
 }
+
+model GuildInvites {
+    id          Text        PrimaryKey
+    guild_id    Text        NotNull     ForeignKey(Guilds.id, onDelete: cascade)
+    code        Text        Unique NotNull
+    uses        Int         NotNull     @default(0)
+    max_uses    Int         NotNull     @default(0)
+    creator_id  Text        NotNull     ForeignKey(Users.id, onDelete: no action)
+    channel_id  Text        NotNull     ForeignKey(Channels.id, onDelete: cascade)
+    vanity      Boolean     NotNull     @default(false)
+    created_at  TimestamptZ @default(now())
+}

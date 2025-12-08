@@ -176,8 +176,11 @@ async fn handle_socket(socket: WebSocket, state: SharedState, cookie_header: Opt
                                 }
                             }
                             3 => {
+                                tracing::info!("Received PRESENCE_UPDATE: user_id={:?}, data={:?}", user_id, payload.d);
                                 if let Some(ref uid) = user_id {
                                     events::presence::handle(&state_clone, uid, &subscribed_rooms, payload.d).await;
+                                } else {
+                                    tracing::warn!("PRESENCE_UPDATE received but user not identified yet");
                                 }
                             }
                             _ => {

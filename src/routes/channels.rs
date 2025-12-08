@@ -131,7 +131,7 @@ async fn get_messages(
         .map_err(|e| AppError::InternalServerError(e.to_string()))?;
     
     let mut sql = String::from(
-        "SELECT m.*, u.id as user_id, u.username, u.tag, u.avatar, u.bot, u.status, u.flags, u.bio, u.banner, u.created_at as user_created_at
+        "SELECT m.*, u.id as user_id, u.username, u.tag, u.avatar, u.bot, CAST(u.status AS TEXT) as status, u.flags, u.bio, u.banner, u.created_at as user_created_at
          FROM messages m
          JOIN users u ON m.author_id = u.id
          WHERE m.channel_id = $1"
@@ -207,8 +207,10 @@ async fn create_message(
     State(state): State<SharedState>,
     jar: CookieJar,
     Path(channel_id): Path<String>,
-    Json(body): Json<MessageCreateRequest>,
+    body: axum::body::Bytes,
 ) -> Result<impl IntoResponse, AppError> {
+    let body: MessageCreateRequest = serde_json::from_slice(&body)
+        .map_err(|_| AppError::BadRequest("Invalid JSON".to_string()))?;
     let account = get_current_user(&state, &jar).await?;
     let (channel, member) = get_channel_and_member(&state, &channel_id, &account.id).await?;
     
@@ -222,34 +224,35 @@ async fn create_message(
     }
     
     let message_id = generate_snowflake();
+    let nonce = body.nonce.clone().unwrap_or_else(|| "0".to_string());
     
-    state.db.messages
-        .create(|c| c
-            .set_id(message_id.clone())
-            .set_author_id(account.id.clone())
-            .set_channel_id(channel_id.clone())
-            .set_guild_id(member.guild_id.clone())
-            .set_content(Some(body.content.clone()))
-            .set_message_type("DEFAULT".to_string())
-            .set_nonce(body.nonce.clone().unwrap_or_else(|| "0".to_string()))
-        )
-        .await?;
+    let client = state.db.get_client().await
+        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
     
-    let message = state.db.messages
-        .find_first(|q| q.where_id(message_id.clone()))
-        .await?
-        .ok_or(AppError::InternalServerError("Failed to create message".to_string()))?;
+    let sql = "INSERT INTO messages (id, author_id, channel_id, guild_id, content, message_type, nonce) 
+               VALUES ($1, $2, $3, $4, $5, $6::TEXT::MessageType, $7) 
+               RETURNING id, author_id, channel_id, guild_id, content, created_at, updated_at, CAST(message_type AS TEXT) as message_type, nonce";
+    
+    let row = client.query_one(sql, &[
+        &message_id,
+        &account.id,
+        &channel_id,
+        &member.guild_id,
+        &body.content,
+        &"DEFAULT",
+        &nonce,
+    ]).await.map_err(|e| AppError::InternalServerError(e.to_string()))?;
     
     let response = Message {
-        id: message.id.clone(),
-        author_id: message.author_id.clone(),
-        channel_id: message.channel_id.clone(),
-        guild_id: message.guild_id.clone(),
-        content: message.content.clone(),
-        created_at: Some(message.created_at),
-        updated_at: message.updated_at,
-        message_type: message.message_type.clone(),
-        nonce: Some(message.nonce.clone()),
+        id: row.get("id"),
+        author_id: row.get("author_id"),
+        channel_id: row.get("channel_id"),
+        guild_id: row.get("guild_id"),
+        content: row.get("content"),
+        created_at: row.get("created_at"),
+        updated_at: row.get("updated_at"),
+        message_type: row.get("message_type"),
+        nonce: row.get("nonce"),
         author: Some(MessageAuthor {
             id: user.id.clone(),
             username: user.username.clone(),
@@ -279,8 +282,10 @@ async fn update_message(
     State(state): State<SharedState>,
     jar: CookieJar,
     Path((channel_id, message_id)): Path<(String, String)>,
-    Json(body): Json<MessageUpdateRequest>,
+    body: axum::body::Bytes,
 ) -> Result<impl IntoResponse, AppError> {
+    let body: MessageUpdateRequest = serde_json::from_slice(&body)
+        .map_err(|_| AppError::BadRequest("Invalid JSON".to_string()))?;
     let account = get_current_user(&state, &jar).await?;
     let (_channel, _member) = get_channel_and_member(&state, &channel_id, &account.id).await?;
     
@@ -409,46 +414,43 @@ async fn create_invite(
     State(state): State<SharedState>,
     jar: CookieJar,
     Path(channel_id): Path<String>,
-    Json(body): Json<InviteCreateRequest>,
+    body: axum::body::Bytes,
 ) -> Result<impl IntoResponse, AppError> {
+    let body: InviteCreateRequest = serde_json::from_slice(&body)
+        .map_err(|_| AppError::BadRequest("Invalid JSON".to_string()))?;
     let account = get_current_user(&state, &jar).await?;
     let (channel, member) = get_channel_and_member(&state, &channel_id, &account.id).await?;
     
     let code = generate_code();
     let invite_id = generate_snowflake();
-    
-    let client = state.db.get_client().await
-        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
-    
-    let sql = "INSERT INTO guild_invites (id, guild_id, code, uses, max_uses, creator_id, channel_id, vanity) 
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *";
-    
     let max_uses = body.max_uses.unwrap_or(0);
     
-    let rows = client.query(sql, &[
-        &invite_id,
-        &member.guild_id,
-        &code,
-        &0i32,
-        &max_uses,
-        &account.id,
-        &channel_id,
-        &false,
-    ]).await.map_err(|e| AppError::InternalServerError(e.to_string()))?;
+    state.db.guild_invites
+        .create(|c| c
+            .set_id(invite_id.clone())
+            .set_guild_id(member.guild_id.clone())
+            .set_code(code.clone())
+            .set_uses(0)
+            .set_max_uses(max_uses)
+            .set_creator_id(account.id.clone())
+            .set_channel_id(channel_id.clone())
+            .set_vanity(false)
+        )
+        .await?;
     
-    if let Some(row) = rows.first() {
-        let invite = Invite {
-            id: row.get("id"),
-            guild_id: row.get("guild_id"),
-            code: row.get("code"),
-            uses: row.get("uses"),
-            max_uses: row.get("max_uses"),
-            creator_id: row.get("creator_id"),
-            channel_id: row.get("channel_id"),
-            vanity: row.get("vanity"),
-        };
-        Ok(Json(invite))
-    } else {
-        Err(AppError::InternalServerError("Failed to create invite".to_string()))
-    }
+    let invite = state.db.guild_invites
+        .find_first(|q| q.where_id(invite_id))
+        .await?
+        .ok_or(AppError::InternalServerError("Failed to create invite".to_string()))?;
+    
+    Ok(Json(Invite {
+        id: invite.id,
+        guild_id: invite.guild_id,
+        code: invite.code,
+        uses: invite.uses,
+        max_uses: invite.max_uses,
+        creator_id: Some(invite.creator_id),
+        channel_id: invite.channel_id,
+        vanity: invite.vanity,
+    }))
 }

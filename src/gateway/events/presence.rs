@@ -9,10 +9,14 @@ pub async fn handle(
     rooms: &[String],
     data: Option<serde_json::Value>,
 ) {
+    tracing::info!("PRESENCE HANDLE: user_id={}, data={:?}", user_id, data);
+    
     let new_status = data
         .and_then(|d| d.get("status").cloned())
         .and_then(|s| s.as_str().map(|s| s.to_string()))
         .unwrap_or_else(|| "ONLINE".to_string());
+    
+    tracing::info!("PRESENCE: new_status={}", new_status);
     
     let user = match state.db.users
         .find_first(|q| q.where_id(user_id.to_string()))
@@ -31,12 +35,18 @@ pub async fn handle(
         Err(_) => return,
     };
     
-    let _ = client
+    let result = client
         .execute(
-            "UPDATE users SET status = $1 WHERE id = $2",
+            "UPDATE users SET status = $1::TEXT::UserStatus WHERE id = $2",
             &[&new_status, &user_id],
         )
         .await;
+        
+    if let Err(e) = result {
+        tracing::error!("Failed to update presence in DB: {:?}", e);
+    } else {
+        tracing::info!("Presence updated in DB for user {}", user_id);
+    }
     
     for room in rooms {
         if room == "admins" {
