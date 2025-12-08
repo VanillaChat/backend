@@ -17,13 +17,18 @@ pub async fn handle(
     token: Option<String>,
     token_secret: &str,
 ) -> Result<IdentifyResult, Box<dyn std::error::Error + Send + Sync>> {
+    tracing::info!("IDENTIFY: token={:?}", token);
+    
     let token = token.ok_or("No token provided")?;
     
+    tracing::info!("IDENTIFY: verifying token...");
     let token_data = verify_token(&token, token_secret)
         .ok_or("Invalid token")?;
     
+    tracing::info!("IDENTIFY: token verified, user_id={}", token_data.user_id);
+    
     let account = state.db.accounts
-        .find_first(|q| q.where_id(token_data.user_id.clone()))
+        .find_first(|q| q.where_token(token))
         .await?
         .ok_or("Account not found")?;
     
