@@ -87,7 +87,8 @@ fn extract_token_from_cookie(cookie_header: Option<&str>) -> Option<String> {
         let part = part.trim();
         if let Some((name, value)) = part.split_once('=') {
             if name.trim() == cookie_name {
-                return Some(value.trim().to_string());
+                let decoded = urlencoding::decode(value.trim()).ok()?;
+                return Some(decoded.to_string());
             }
         }
     }
@@ -97,6 +98,8 @@ fn extract_token_from_cookie(cookie_header: Option<&str>) -> Option<String> {
 async fn handle_socket(socket: WebSocket, state: SharedState, cookie_header: Option<String>) {
     let (mut sender, mut receiver) = socket.split();
     let (tx, mut rx) = mpsc::unbounded_channel::<String>();
+    
+    tracing::info!("WebSocket connected, cookie_header: {:?}", cookie_header);
     
     let hello = Payload::with_data(10, serde_json::json!({
         "heartbeat_interval": 30000
@@ -111,7 +114,6 @@ async fn handle_socket(socket: WebSocket, state: SharedState, cookie_header: Opt
     
     let mut user_id: Option<String> = None;
     let mut subscribed_rooms: Vec<String> = Vec::new();
-    let mut heartbeat_handle: Option<tokio::task::JoinHandle<()>> = None;
     
     let send_task = tokio::spawn(async move {
         while let Some(msg) = rx.recv().await {
@@ -217,10 +219,6 @@ async fn handle_socket(socket: WebSocket, state: SharedState, cookie_header: Opt
                 state.broadcast_to_room(&member.guild_id, serde_json::to_string(&presence).unwrap());
             }
         }
-    }
-    
-    if let Some(handle) = heartbeat_handle {
-        handle.abort();
     }
     
     broadcast_task.abort();

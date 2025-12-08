@@ -230,7 +230,21 @@ async fn register(
                     path: "inviteCode".to_string(),
                 }]));
             }
-            Some(_code) => {
+            Some(code) => {
+                let invite = state.db.invite_codes
+                    .find_first(|q| q.where_code(code.clone()))
+                    .await?;
+                
+                if invite.is_none() {
+                    return Err(AppError::ValidationFailed(vec![FieldError {
+                        code: "register.errors.invalidInviteCode".to_string(),
+                        path: "inviteCode".to_string(),
+                    }]));
+                }
+                
+                state.db.invite_codes
+                    .delete(|d| d.where_code(code.clone()))
+                    .await?;
             }
         }
     }
@@ -276,7 +290,6 @@ async fn register(
             .set_id(user_id.clone())
             .set_username(body.username.clone())
             .set_tag(tag)
-            .set_status("ONLINE".to_string())
             .set_flags(flags)
             .set_bot(false)
         )

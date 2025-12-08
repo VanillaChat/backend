@@ -31,6 +31,15 @@ model Users {
     banner      Text?
 }
 
+model InviteCodes {
+    id          Text        PrimaryKey
+    code        Text        Unique NotNull
+    created_by  Text        NotNull     ForeignKey(Users.id, onDelete: no action)
+    used_by     Text?
+    used        Boolean     @default(false)
+    created_at  TimestamptZ @default(now())
+}
+
 model Accounts {
     id              Text        PrimaryKey
     email           Text        Unique NotNull
@@ -39,6 +48,23 @@ model Accounts {
     email_verified  Boolean     NotNull     @default(false)
     locale          Text        NotNull     @default('en_us')
     token           Text        Unique NotNull
+    password_version Int        NotNull     @default(0)
+    invite_code     Text?       ForeignKey(InviteCodes.id, onDelete: no action)
+}
+
+model AccountSettings {
+    id                      Serial      PrimaryKey
+    account_id              Text?       Unique
+    theme                   Theme       NotNull     @default(LIGHT)
+    compact_mode            Boolean     NotNull     @default(false)
+    compact_show_avatars    Boolean     NotNull     @default(true)
+}
+
+model AccountDeleteSchedule {
+    id              Text        PrimaryKey  ForeignKey(Accounts.id, onDelete: cascade)
+    job_id          Text        NotNull
+    delete_messages Boolean     NotNull     @default(false)
+    delete_at       Text        NotNull     @default('')
 }
 
 model Guilds {
