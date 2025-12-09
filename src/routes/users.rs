@@ -70,45 +70,26 @@ async fn update_user(
         return Err(AppError::BadRequest("At least one field is required".to_string()));
     }
     
-    let client = state.db.get_client().await
-        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
-    
-    let mut updates = Vec::new();
-    let mut params: Vec<Box<dyn tokio_postgres::types::ToSql + Sync + Send>> = Vec::new();
-    let mut param_idx = 1;
-    
-    if let Some(username) = &body.username {
-        updates.push(format!("username = ${}", param_idx));
-        params.push(Box::new(username.clone()));
-        param_idx += 1;
-    }
-    
-    if let Some(tag) = &body.tag {
-        updates.push(format!("tag = ${}", param_idx));
-        params.push(Box::new(tag.clone()));
-        param_idx += 1;
-    }
-    
-    if let Some(bio) = &body.bio {
-        updates.push(format!("bio = ${}", param_idx));
-        params.push(Box::new(bio.clone()));
-        param_idx += 1;
-    }
-    
-    if !updates.is_empty() {
-        params.push(Box::new(account.id.clone()));
-        let sql = format!(
-            "UPDATE users SET {} WHERE id = ${}",
-            updates.join(", "),
-            param_idx
-        );
-        
-        let params_refs: Vec<&(dyn tokio_postgres::types::ToSql + Sync)> = 
-            params.iter().map(|p| p.as_ref() as &(dyn tokio_postgres::types::ToSql + Sync)).collect();
-        
-        client.execute(&sql, &params_refs).await
-            .map_err(|e| AppError::InternalServerError(e.to_string()))?;
-    }
+    let mut update_builder = state.db.users.update(|u| {
+        let mut u = u.where_id(account.id.clone());
+        if let Some(username) = &body.username {
+            u = u.set_username(username.clone());
+        }
+        if let Some(tag) = &body.tag {
+            u = u.set_tag(tag.clone());
+        }
+        if let Some(bio) = &body.bio {
+            u = u.set_bio(Some(bio.clone()));
+        }
+        if let Some(avatar) = &body.avatar {
+            u = u.set_avatar(Some(avatar.clone()));
+        }
+        if let Some(banner) = &body.banner {
+            u = u.set_banner(Some(banner.clone()));
+        }
+        u
+    });
+    update_builder.await?;
     
     let updated_user = state.db.users
         .find_first(|q| q.where_id(account.id.clone()))
@@ -155,48 +136,29 @@ async fn update_settings(
         return Err(AppError::BadRequest("At least one field is required".to_string()));
     }
 
-    let client = state.db.get_client().await
-        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+    let mut update_needed = false;
+    let update_future = state.db.account_settings.update(|u| {
+        let mut u = u.where_account_id(account.id.clone());
+        
+        if let Some(theme_str) = &body.theme {
+             u = u.set_theme(theme_str.clone());
+             update_needed = true;
+        }
 
-    let mut updates = Vec::new();
-    let mut params: Vec<Box<dyn tokio_postgres::types::ToSql + Sync + Send>> = Vec::new();
-    let mut param_idx = 1;
+        if let Some(compact_mode) = body.compact_mode {
+            u = u.set_compact_mode(compact_mode);
+            update_needed = true;
+        }
 
-    if let Some(theme) = &body.theme {
-        println!("{}", theme.clone());
-        updates.push(format!("theme = ${}::text::theme", param_idx));
-        params.push(Box::new(theme.clone()));
-        param_idx += 1;
-    }
+        if let Some(compact_show_avatars) = body.compact_show_avatars {
+            u = u.set_compact_show_avatars(compact_show_avatars);
+            update_needed = true;
+        }
+        u
+    });
 
-    if let Some(compact_mode) = &body.compact_mode {
-        updates.push(format!("compact_mode = ${}", param_idx));
-        params.push(Box::new(compact_mode.clone()));
-        param_idx += 1;
-    }
-
-    if let Some(compact_show_avatars) = &body.compact_show_avatars {
-        updates.push(format!("compact_show_avatars = ${}", param_idx));
-        params.push(Box::new(compact_show_avatars.clone()));
-        param_idx += 1;
-    }
-
-    if !updates.is_empty() {
-        params.push(Box::new(account.id.clone()));
-        let sql = format!(
-            "UPDATE accountsettings SET {} WHERE account_id = ${}",
-            updates.join(", "),
-            param_idx
-        );
-
-        let params_refs: Vec<&(dyn tokio_postgres::types::ToSql + Sync)> =
-            params.iter().map(|p| p.as_ref() as &(dyn tokio_postgres::types::ToSql + Sync)).collect();
-
-        client.execute(&sql, &params_refs).await
-            .map_err(|e| {
-                println!("Failed to update settings: {:?}", e);
-                return AppError::InternalServerError(e.to_string());
-            })?;
+    if update_needed {
+        update_future.await.map_err(|e| AppError::InternalServerError(e.to_string()))?;
     }
     
     Ok(StatusCode::NO_CONTENT)

@@ -123,79 +123,48 @@ async fn get_messages(
     Query(query): Query<MessagesQuery>,
 ) -> Result<impl IntoResponse, AppError> {
     let account = get_current_user(&state, &jar).await?;
-    let (channel, _member) = get_channel_and_member(&state, &channel_id, &account.id).await?;
+    let (_channel, _member) = get_channel_and_member(&state, &channel_id, &account.id).await?;
     
-    let limit = query.limit.unwrap_or(50).min(100).max(1);
+    let limit = query.limit.unwrap_or(50).min(100).max(1) as usize;
     
-    let client = state.db.get_client().await
-        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
-    
-    let mut sql = String::from(
-        "SELECT m.*, u.id as user_id, u.username, u.tag, u.avatar, u.bot, CAST(u.status AS TEXT) as status, u.flags, u.bio, u.banner, u.created_at as user_created_at
-         FROM messages m
-         JOIN users u ON m.author_id = u.id
-         WHERE m.channel_id = $1"
-    );
-    let mut params: Vec<Box<dyn tokio_postgres::types::ToSql + Sync + Send>> = Vec::new();
-    params.push(Box::new(channel_id.clone()));
-    
-    let mut param_idx = 2;
-    
+    let mut builder = state.db.messages.query()
+        .where_channel_id(channel_id)
+        .include_users()
+        .order_by_created_at_desc()
+        .limit(limit);
+
     if let Some(before) = &query.before {
-        sql.push_str(&format!(" AND m.id < ${}", param_idx));
-        params.push(Box::new(before.clone()));
-        param_idx += 1;
+        builder = builder.where_id_lt(before.clone());
     } else if let Some(after) = &query.after {
-        sql.push_str(&format!(" AND m.id > ${}", param_idx));
-        params.push(Box::new(after.clone()));
-        param_idx += 1;
+        builder = builder.where_id_gt(after.clone());
     }
     
-    sql.push_str(" ORDER BY m.created_at DESC");
-    sql.push_str(&format!(" LIMIT ${}", param_idx));
-    params.push(Box::new(limit));
-    
-    let params_refs: Vec<&(dyn tokio_postgres::types::ToSql + Sync)> = 
-        params.iter().map(|p| p.as_ref() as &(dyn tokio_postgres::types::ToSql + Sync)).collect();
-    
-    let rows = client.query(&sql, &params_refs).await
+    let messages_json = builder.find_many_json().await
         .map_err(|e| AppError::InternalServerError(e.to_string()))?;
     
-    let mut messages: Vec<Message> = rows.iter().map(|row| {
-        let user = User {
-            id: row.get("user_id"),
-            username: row.get("username"),
-            tag: row.get("tag"),
-            created_at: row.get("user_created_at"),
-            bot: row.get("bot"),
-            status: row.get("status"),
-            flags: row.get("flags"),
-            bio: row.get("bio"),
-            avatar: row.get("avatar"),
-            banner: row.get("banner"),
-        };
+    let mut messages: Vec<Message> = messages_json.into_iter().map(|value| {
+        let msg_model: byteorm_client::Messages = serde_json::from_value(value.clone())
+             .expect("Failed to deserialize message");
         
-        Message {
-            id: row.get("id"),
-            author_id: row.get("author_id"),
-            channel_id: row.get("channel_id"),
-            guild_id: row.get("guild_id"),
-            content: row.get("content"),
-            created_at: row.get("created_at"),
-            updated_at: row.get("updated_at"),
-            message_type: row.try_get("message_type").unwrap_or_else(|_| "DEFAULT".to_string()),
-            nonce: row.get("nonce"),
-            author: Some(MessageAuthor {
-                id: user.id,
-                username: user.username,
-                tag: user.tag,
-                avatar: user.avatar,
-                bot: user.bot,
-                status: user.status,
-                flags: user.flags,
-                member: None,
-            }),
-        }
+        let user_json = value.get("users").expect("Missing users join");
+        let user_model: byteorm_client::Users = serde_json::from_value(user_json.clone())
+             .expect("Failed to deserialize user");
+             
+        let mut msg: Message = msg_model.into();
+        let user: User = user_model.into();
+        
+        msg.author = Some(MessageAuthor {
+            id: user.id,
+            username: user.username,
+            tag: user.tag,
+            avatar: user.avatar,
+            bot: user.bot,
+            status: user.status,
+            flags: user.flags,
+            member: None,
+        });
+        
+        msg
     }).collect();
     
     messages.reverse();
@@ -212,7 +181,7 @@ async fn create_message(
     let body: MessageCreateRequest = serde_json::from_slice(&body)
         .map_err(|_| AppError::BadRequest("Invalid JSON".to_string()))?;
     let account = get_current_user(&state, &jar).await?;
-    let (channel, member) = get_channel_and_member(&state, &channel_id, &account.id).await?;
+    let (_channel, member) = get_channel_and_member(&state, &channel_id, &account.id).await?;
     
     let user = state.db.users
         .find_first(|q| q.where_id(account.id.clone()))
@@ -226,46 +195,29 @@ async fn create_message(
     let message_id = generate_snowflake();
     let nonce = body.nonce.clone().unwrap_or_else(|| "0".to_string());
     
-    let client = state.db.get_client().await
-        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
-    
-    let sql = "INSERT INTO messages (id, author_id, channel_id, guild_id, content, message_type, nonce) 
-               VALUES ($1, $2, $3, $4, $5, $6::TEXT::MessageType, $7) 
-               RETURNING id, author_id, channel_id, guild_id, content, created_at, updated_at, CAST(message_type AS TEXT) as message_type, nonce";
-    
-    let row = client.query_one(sql, &[
-        &message_id,
-        &account.id,
-        &channel_id,
-        &member.guild_id,
-        &body.content,
-        &"DEFAULT",
-        &nonce,
-    ]).await.map_err(|e| AppError::InternalServerError(e.to_string()))?;
-    
-    let response = Message {
-        id: row.get("id"),
-        author_id: row.get("author_id"),
-        channel_id: row.get("channel_id"),
-        guild_id: row.get("guild_id"),
-        content: row.get("content"),
-        created_at: row.get("created_at"),
-        updated_at: row.get("updated_at"),
-        message_type: row.get("message_type"),
-        nonce: row.get("nonce"),
-        author: Some(MessageAuthor {
-            id: user.id.clone(),
-            username: user.username.clone(),
-            tag: user.tag.clone(),
-            avatar: user.avatar.clone(),
-            bot: user.bot,
-            status: user.status.clone(),
-            flags: user.flags,
-            member: Some(MemberInfo {
-                nickname: member.nickname.clone(),
-            }),
+    let new_msg = state.db.messages.create(|c| c
+        .set_id(message_id.clone())
+        .set_author_id(account.id.clone())
+        .set_channel_id(channel_id.clone())
+        .set_guild_id(member.guild_id.clone())
+        .set_content(Some(body.content.clone()))
+        .set_message_type("DEFAULT".to_string())
+        .set_nonce(nonce.clone())
+    ).await.map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    let mut response: Message = new_msg.into();
+    response.author = Some(MessageAuthor {
+        id: user.id.clone(),
+        username: user.username.clone(),
+        tag: user.tag.clone(),
+        avatar: user.avatar.clone(),
+        bot: user.bot,
+        status: user.status.clone(),
+        flags: user.flags,
+        member: Some(MemberInfo {
+            nickname: member.nickname.clone(),
         }),
-    };
+    });
     
     let broadcast_message = json!({
         "op": 0,

@@ -84,26 +84,22 @@ async fn create_invite_code(
     
     let id = generate_snowflake();
     let code = generate_code();
+
+    let invite = state.db.invite_codes
+        .create(|c| c
+            .set_id(id.clone())
+            .set_code(code.clone())
+            .set_created_by(account.id.clone())
+            .set_used(false)
+        )
+        .await?;
     
-    let client = state.db.get_client().await
-        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
-    
-    let sql = "INSERT INTO invite_codes (id, code, created_by, used, created_at) 
-               VALUES ($1, $2, $3, $4, NOW()) RETURNING *";
-    
-    let rows = client.query(sql, &[&id, &code, &account.id, &false]).await
-        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
-    
-    if let Some(row) = rows.first() {
-        Ok(Json(json!({
-            "id": row.get::<_, String>("id"),
-            "code": row.get::<_, String>("code"),
-            "createdBy": row.get::<_, String>("created_by"),
-            "used": row.get::<_, bool>("used"),
-        })))
-    } else {
-        Err(AppError::InternalServerError("Failed to create invite code".to_string()))
-    }
+    Ok(Json(json!({
+        "id": invite.id,
+        "code": invite.code,
+        "createdBy": invite.created_by,
+        "used": invite.used,
+    })))
 }
 
 async fn delete_invite_code(
@@ -112,25 +108,19 @@ async fn delete_invite_code(
     Path(id): Path<String>,
 ) -> Result<impl IntoResponse, AppError> {
     let (account, _user) = get_admin_user(&state, &jar).await?;
-    
-    let client = state.db.get_client().await
-        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
-    
-    let sql = "SELECT * FROM invite_codes WHERE id = $1";
-    let rows = client.query(sql, &[&id]).await
-        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
-    
-    let row = rows.first()
+
+    let invite = state.db.invite_codes
+        .find_first(|q| q.where_id(id.clone()))
+        .await?
         .ok_or(AppError::NotFound("Invite code not found".to_string()))?;
     
-    let used: bool = row.get("used");
-    if used {
+    if invite.used {
         return Err(AppError::Forbidden("Cannot delete used invite code".to_string()));
     }
-    
-    let delete_sql = "DELETE FROM invite_codes WHERE id = $1";
-    client.execute(delete_sql, &[&id]).await
-        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    state.db.invite_codes
+        .delete(|d| d.where_id(id.clone()))
+        .await?;
     
     let broadcast = json!({
         "op": 0,

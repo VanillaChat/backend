@@ -30,17 +30,10 @@ pub async fn handle(
         return;
     }
     
-    let client = match state.db.get_client().await {
-        Ok(c) => c,
-        Err(_) => return,
-    };
-    
-    let result = client
-        .execute(
-            "UPDATE users SET status = $1::TEXT::UserStatus WHERE id = $2",
-            &[&new_status, &user_id],
-        )
-        .await;
+    let result = state.db.users.update(|u| u
+            .where_id(user_id.to_string())
+            .set_status(new_status.clone())
+        ).await.map(|_| 1);
         
     if let Err(e) = result {
         tracing::error!("Failed to update presence in DB: {:?}", e);
