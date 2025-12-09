@@ -36,6 +36,11 @@ pub async fn handle(
         .find_first(|q| q.where_id(account.user_id.clone()))
         .await?
         .ok_or("User not found")?;
+
+    let account_settings = state.db.account_settings
+        .find_first(|q| q.where_account_id(account.id.clone()))
+        .await?
+        .ok_or("Account settings not found")?;
     
     let members = state.db.guild_members
         .find_many(|q| q.where_user_id(account.id.clone()))
@@ -116,11 +121,13 @@ pub async fn handle(
             "email": account.email
         },
         "settings": {
-            "theme": "LIGHT",
-            "compactMode": false,
-            "compactShowAvatars": true
+            "theme": account_settings.theme,
+            "compactMode": account_settings.compact_mode,
+            "compactShowAvatars": account_settings.compact_show_avatars
         },
-        "appSettings": null,
+        "appSettings": {
+            "inviteCodes": []
+        },
         "user": User::from(user.clone()),
         "guilds": guilds,
         "presences": presences

@@ -50,11 +50,12 @@ model Accounts {
     token           Text        Unique NotNull
     password_version Int        NotNull     @default(0)
     invite_code     Text?       ForeignKey(InviteCodes.id, onDelete: no action)
+    settings_id     Text        Unique NotNull ForeignKey(AccountSettings.account_id, onDelete: no action)
 }
 
 model AccountSettings {
     id                      Serial      PrimaryKey
-    account_id              Text?       Unique
+    account_id              Text        Unique
     theme                   Theme       NotNull     @default(LIGHT)
     compact_mode            Boolean     NotNull     @default(false)
     compact_show_avatars    Boolean     NotNull     @default(true)

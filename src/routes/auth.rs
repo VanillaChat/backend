@@ -221,8 +221,9 @@ async fn register(
     if !errors.is_empty() {
         return Err(AppError::ValidationFailed(errors));
     }
-    
+
     if state.config.registration_closed {
+        println!("Registration closed. Value: {}", state.config.registration_closed);
         match &body.invite_code {
             None => {
                 return Err(AppError::ValidationFailed(vec![FieldError {
@@ -294,6 +295,12 @@ async fn register(
             .set_bot(false)
         )
         .await?;
+
+    state.db.account_settings
+        .create(|c| c
+            .set_account_id(user_id.clone())
+        )
+        .await?;
     
     state.db.accounts
         .create(|c| c
@@ -304,6 +311,7 @@ async fn register(
             .set_token(token.clone())
             .set_email_verified(false)
             .set_locale("en_us".to_string())
+            .set_settings_id(user_id.clone())
         )
         .await?;
     

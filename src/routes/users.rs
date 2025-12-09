@@ -6,12 +6,12 @@ use axum::{
     Json, Router,
 };
 use axum_extra::extract::CookieJar;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize};
 use serde_json::json;
 
 use crate::auth::token::verify_token;
 use crate::error::AppError;
-use crate::models::{User, AccountSettings};
+use crate::models::{User};
 use crate::state::SharedState;
 
 pub fn router() -> Router<SharedState> {
@@ -60,7 +60,7 @@ async fn update_user(
 ) -> Result<impl IntoResponse, AppError> {
     let account = get_current_user(&state, &jar).await?;
     
-    let user = state.db.users
+    state.db.users
         .find_first(|q| q.where_id(account.id.clone()))
         .await?
         .ok_or(AppError::Unauthorized)?;
@@ -150,9 +150,53 @@ async fn update_settings(
     Json(body): Json<UpdateSettingsRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let account = get_current_user(&state, &jar).await?;
-    
+
     if body.theme.is_none() && body.compact_mode.is_none() && body.compact_show_avatars.is_none() {
         return Err(AppError::BadRequest("At least one field is required".to_string()));
+    }
+
+    let client = state.db.get_client().await
+        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    let mut updates = Vec::new();
+    let mut params: Vec<Box<dyn tokio_postgres::types::ToSql + Sync + Send>> = Vec::new();
+    let mut param_idx = 1;
+
+    if let Some(theme) = &body.theme {
+        println!("{}", theme.clone());
+        updates.push(format!("theme = ${}::text::theme", param_idx));
+        params.push(Box::new(theme.clone()));
+        param_idx += 1;
+    }
+
+    if let Some(compact_mode) = &body.compact_mode {
+        updates.push(format!("compact_mode = ${}", param_idx));
+        params.push(Box::new(compact_mode.clone()));
+        param_idx += 1;
+    }
+
+    if let Some(compact_show_avatars) = &body.compact_show_avatars {
+        updates.push(format!("compact_show_avatars = ${}", param_idx));
+        params.push(Box::new(compact_show_avatars.clone()));
+        param_idx += 1;
+    }
+
+    if !updates.is_empty() {
+        params.push(Box::new(account.id.clone()));
+        let sql = format!(
+            "UPDATE accountsettings SET {} WHERE account_id = ${}",
+            updates.join(", "),
+            param_idx
+        );
+
+        let params_refs: Vec<&(dyn tokio_postgres::types::ToSql + Sync)> =
+            params.iter().map(|p| p.as_ref() as &(dyn tokio_postgres::types::ToSql + Sync)).collect();
+
+        client.execute(&sql, &params_refs).await
+            .map_err(|e| {
+                println!("Failed to update settings: {:?}", e);
+                return AppError::InternalServerError(e.to_string());
+            })?;
     }
     
     Ok(StatusCode::NO_CONTENT)
@@ -165,7 +209,7 @@ async fn leave_guild(
 ) -> Result<impl IntoResponse, AppError> {
     let account = get_current_user(&state, &jar).await?;
     
-    let member = state.db.guild_members
+    state.db.guild_members
         .find_first(|q| q
             .where_user_id(account.id.clone())
             .where_guild_id(guild_id.clone()))
@@ -193,10 +237,10 @@ async fn leave_guild(
             .where_guild_id(guild_id.clone()))
         .await?;
     
-    if let Some(sockets) = state.connected_users.get(&account.id) {
-        for socket in sockets.iter() {
-        }
-    }
+    // if let Some(sockets) = state.connected_users.get(&account.id) {
+    //     for socket in sockets.iter() {
+    //     }
+    // }
     
     if let Some(user) = user {
         let broadcast = json!({
