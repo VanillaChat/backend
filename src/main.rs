@@ -8,11 +8,11 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use tower::ServiceBuilder;
 use tower_http::{
-    cors::{Any, CorsLayer},
-    trace::{DefaultMakeSpan, DefaultOnResponse, TraceLayer},
     compression::CompressionLayer,
+    cors::{AllowOrigin, Any, CorsLayer},
+    trace::{DefaultMakeSpan, DefaultOnResponse, TraceLayer},
 };
-use tracing::{info, Level};
+use tracing::info;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 mod auth;
@@ -27,6 +27,27 @@ mod state;
 use config::Config;
 use state::AppState;
 
+fn print_banner(port: u16) {
+    println!(
+        r#"
++------------------------------------------------------------+
+|                                                            |
+|   ██╗   ██╗ █████╗ ███╗   ██╗██╗██╗     ██╗      █████╗   |
+|   ██║   ██║██╔══██╗████╗  ██║██║██║     ██║     ██╔══██╗  |
+|   ██║   ██║███████║██╔██╗ ██║██║██║     ██║     ███████║  |
+|   ╚██╗ ██╔╝██╔══██║██║╚██╗██║██║██║     ██║     ██╔══██║  |
+|    ╚████╔╝ ██║  ██║██║ ╚████║██║███████╗███████╗██║  ██║  |
+|     ╚═══╝  ╚═╝  ╚═╝╚═╝  ╚═══╝╚═╝╚══════╝╚══════╝╚═╝  ╚═╝  |
+|                                                            |
+|   Backend online                                           |
+|   HTTP: http://localhost:{port:<5}                              |
+|   TUI:  cargo run --bin vanilla-tui                        |
+|                                                            |
++------------------------------------------------------------+
+"#
+    );
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::registry()
@@ -39,15 +60,28 @@ async fn main() -> anyhow::Result<()> {
 
     let config = Config::from_env()?;
     let port = config.port;
-    
+    let cors_allowed_origins = config
+        .cors_allowed_origins
+        .iter()
+        .map(|origin| origin.parse::<HeaderValue>())
+        .collect::<Result<Vec<_>, _>>()?;
+
     let state = AppState::new(config).await?;
     let shared_state = Arc::new(state);
 
     info!("Database and Redis connections established.");
+    print_banner(port);
 
     let cors = CorsLayer::new()
-        .allow_origin("http://localhost:5173".parse::<HeaderValue>()?)
-        .allow_methods([Method::GET, Method::POST, Method::PUT, Method::PATCH, Method::DELETE, Method::OPTIONS])
+        .allow_origin(AllowOrigin::list(cors_allowed_origins))
+        .allow_methods([
+            Method::GET,
+            Method::POST,
+            Method::PUT,
+            Method::PATCH,
+            Method::DELETE,
+            Method::OPTIONS,
+        ])
         .allow_headers([
             axum::http::header::CONTENT_TYPE,
             axum::http::header::AUTHORIZATION,

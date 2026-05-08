@@ -176,7 +176,7 @@ impl From<byteorm_client::Users> for User {
             tag: u.tag,
             created_at: u.created_at,
             bot: u.bot,
-            status: u.status,
+            status: u.status.to_string(),
             flags: u.flags,
             bio: u.bio,
             avatar: u.avatar,
@@ -235,7 +235,7 @@ impl From<byteorm_client::Messages> for Message {
             content: m.content,
             created_at: Some(m.created_at),
             updated_at: m.updated_at,
-            message_type: m.message_type,
+            message_type: m.message_type.to_string(),
             nonce: Some(m.nonce),
             author: None,
         }

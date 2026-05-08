@@ -11,6 +11,7 @@ pub struct Config {
     pub user_guild_limit: u32,
     pub max_avatar_size: usize,
     pub max_banner_size: usize,
+    pub cors_allowed_origins: Vec<String>,
 }
 
 impl Config {
@@ -38,6 +39,23 @@ impl Config {
             max_banner_size: std::env::var("MAX_BANNER_SIZE")
                 .unwrap_or_else(|_| "25000000".to_string())
                 .parse()?,
+            cors_allowed_origins: std::env::var("CORS_ALLOWED_ORIGINS")
+                .unwrap_or_else(|_| {
+                    [
+                        "http://localhost:5173",
+                        "http://127.0.0.1:5173",
+                        "https://vanilla.meetz.li",
+                        "http://vanilla.meetz.li",
+                        "https://svanilla.meetz.li",
+                        "http://svanilla.meetz.li",
+                    ]
+                    .join(",")
+                })
+                .split(',')
+                .map(str::trim)
+                .filter(|origin| !origin.is_empty())
+                .map(ToOwned::to_owned)
+                .collect(),
         })
     }
 }

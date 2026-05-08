@@ -2,9 +2,10 @@
 name = "vanilla-backend"
 version = "0.1.0"
 edition = "2024"
+default-run = "vanilla-backend"
 
 [dependencies]
-axum = { version = "0.8.7", features = ["ws", "macros"] }
+axum = { version = "0.8.7", features = ["ws", "macros", "multipart"] }
 axum-extra = { version = "0.10.0", features = ["cookie"] }
 tokio = { version = "1.48.0", features = ["full"] }
 tower = "0.5.2"
@@ -40,3 +41,5 @@ dashmap = "6.1"
 time = "0.3"
 tokio-postgres = "0.7"
 urlencoding = "2.1"
+ratatui = "0.30.0"
+crossterm = "0.29.0"

@@ -9,6 +9,8 @@ use axum_extra::extract::CookieJar;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
+use byteorm_client::MessageType;
+
 use crate::auth::token::verify_token;
 use crate::error::AppError;
 use crate::models::{Invite, Message, MessageAuthor, MemberInfo, User};
@@ -201,7 +203,7 @@ async fn create_message(
         .set_channel_id(channel_id.clone())
         .set_guild_id(member.guild_id.clone())
         .set_content(Some(body.content.clone()))
-        .set_message_type("DEFAULT".to_string())
+        .set_message_type(MessageType::DEFAULT)
         .set_nonce(nonce.clone())
     ).await.map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
@@ -212,7 +214,7 @@ async fn create_message(
         tag: user.tag.clone(),
         avatar: user.avatar.clone(),
         bot: user.bot,
-        status: user.status.clone(),
+        status: user.status.to_string(),
         flags: user.flags,
         member: Some(MemberInfo {
             nickname: member.nickname.clone(),
