@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use serde_json::json;
 
 use byteorm_client::UserStatus;
@@ -55,19 +57,47 @@ pub async fn handle(
         tracing::info!("Presence updated in DB for user {}", user_id);
     }
 
+    let presence = Payload::dispatch(
+        "PRESENCE_UPDATE",
+        json!({
+            "userId": user_id,
+            "status": new_status.to_string()
+        }),
+    );
+    let serialized = match serde_json::to_string(&presence) {
+        Ok(s) => s,
+        Err(e) => {
+            tracing::error!("Failed to serialize presence: {:?}", e);
+            return;
+        }
+    };
+
+    let mut recipients: HashSet<String> = HashSet::new();
     for room in rooms {
         if room == "admins" {
             continue;
         }
+        let members = match state
+            .db
+            .guild_members
+            .find_many(|q| q.where_guild_id(room.clone()))
+            .await
+        {
+            Ok(m) => m,
+            Err(e) => {
+                tracing::error!("Failed to fetch guild_members for {}: {:?}", room, e);
+                continue;
+            }
+        };
+        for member in members {
+            if member.user_id == user_id {
+                continue;
+            }
+            recipients.insert(member.user_id);
+        }
+    }
 
-        let presence = Payload::dispatch(
-            "PRESENCE_UPDATE",
-            json!({
-                "userId": user_id,
-                "status": new_status.to_string()
-            }),
-        );
-
-        state.broadcast_to_room(room, serde_json::to_string(&presence).unwrap());
+    for rid in recipients {
+        state.send_to_user(&rid, serialized.clone());
     }
 }

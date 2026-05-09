@@ -249,4 +249,12 @@ impl AppState {
             message,
         });
     }
+
+    pub fn send_to_user(&self, user_id: &str, message: String) {
+        if let Some(senders) = self.connected_users.get(user_id) {
+            for tx in senders.iter() {
+                let _ = tx.send(message.clone());
+            }
+        }
+    }
 }

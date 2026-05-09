@@ -122,7 +122,6 @@ async fn handle_socket(socket: WebSocket, state: SharedState, cookie_header: Opt
     }
 
     let state_clone = state.clone();
-    let tx_clone = tx.clone();
 
     let mut user_id: Option<String> = None;
     let mut subscribed_rooms: Vec<String> = Vec::new();
@@ -257,17 +256,36 @@ async fn handle_socket(socket: WebSocket, state: SharedState, cookie_header: Opt
             .find_many(|q| q.where_user_id(uid.clone()))
             .await;
 
-        if let Ok(members) = members {
-            for member in members {
-                let presence = Payload::dispatch(
-                    "PRESENCE_UPDATE",
-                    serde_json::json!({
-                        "userId": uid,
-                        "status": "UNAVAILABLE"
-                    }),
-                );
-                state
-                    .broadcast_to_room(&member.guild_id, serde_json::to_string(&presence).unwrap());
+        if let Ok(memberships) = members {
+            let presence = Payload::dispatch(
+                "PRESENCE_UPDATE",
+                serde_json::json!({
+                    "userId": uid,
+                    "status": "UNAVAILABLE"
+                }),
+            );
+            let serialized = serde_json::to_string(&presence).unwrap();
+
+            let mut recipients: std::collections::HashSet<String> =
+                std::collections::HashSet::new();
+            for membership in memberships {
+                let guild_members = state
+                    .db
+                    .guild_members
+                    .find_many(|q| q.where_guild_id(membership.guild_id.clone()))
+                    .await;
+                if let Ok(gms) = guild_members {
+                    for gm in gms {
+                        if gm.user_id == uid {
+                            continue;
+                        }
+                        recipients.insert(gm.user_id);
+                    }
+                }
+            }
+
+            for rid in recipients {
+                state.send_to_user(&rid, serialized.clone());
             }
         }
     }
