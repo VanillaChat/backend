@@ -1,6 +1,6 @@
 use axum::{
-    extract::{Path, State},
-    http::StatusCode,
+    extract::State
+    ,
     response::IntoResponse,
     routing::post,
     Json, Router,
@@ -16,7 +16,7 @@ use crate::state::SharedState;
 #[derive(Debug, Deserialize)]
 pub struct CreateGuildRequest {
     name: String,
-    brief: String,
+    brief: Option<String>,
 }
 
 fn generate_snowflake() -> String {
@@ -82,19 +82,22 @@ async fn create_guild(
             path: "name".to_string(),
         });
     }
-    if body.brief.len() < 2 {
-        errors.push(FieldError {
-            code: "modals.serverCreate.briefMinChars".to_string(),
-            path: "brief".to_string(),
-        });
+
+    if let Some(brief) = &body.brief {
+        if brief.len() < 2 {
+            errors.push(FieldError {
+                code: "modals.serverCreate.briefMinChars".to_string(),
+                path: "brief".to_string(),
+            });
+        }
+        if brief.len() > 36 {
+            errors.push(FieldError {
+                code: "modals.serverCreate.briefMaxChars".to_string(),
+                path: "brief".to_string(),
+            });
+        }
     }
-    if body.brief.len() > 36 {
-        errors.push(FieldError {
-            code: "modals.serverCreate.briefMaxChars".to_string(),
-            path: "brief".to_string(),
-        });
-    }
-    
+
     if !errors.is_empty() {
         return Err(AppError::ValidationFailed(errors));
     }

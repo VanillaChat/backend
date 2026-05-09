@@ -71,7 +71,7 @@ model AccountDeleteSchedule {
 model Guilds {
     id          Text        PrimaryKey
     name        Text        NotNull     @default('New Server')
-    brief       Text        NotNull     @default('A server to talk')
+    brief       Text?
     icon        Text?
     created_at  TimestamptZ @default(now())
     owner_id    Text        NotNull

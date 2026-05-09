@@ -41,7 +41,7 @@ pub struct AccountSettings {
 pub struct Guild {
     pub id: String,
     pub name: String,
-    pub brief: String,
+    pub brief: Option<String>,
     pub icon: Option<String>,
     pub owner_id: String,
     #[serde(with = "chrono::serde::ts_milliseconds_option")]
