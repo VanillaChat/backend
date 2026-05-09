@@ -1,16 +1,11 @@
-use axum::{
-    http::{HeaderValue, Method, StatusCode},
-    response::IntoResponse,
-    routing::get,
-    Router,
-};
+use axum::{http::{HeaderValue, Method, StatusCode}, routing::get, Router};
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tower::ServiceBuilder;
 use tower_http::{
     compression::CompressionLayer,
-    cors::{AllowOrigin, Any, CorsLayer},
-    trace::{DefaultMakeSpan, DefaultOnResponse, TraceLayer},
+    cors::{AllowOrigin, CorsLayer},
+    trace::TraceLayer,
 };
 use tracing::info;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -60,11 +55,18 @@ async fn main() -> anyhow::Result<()> {
 
     let config = Config::from_env()?;
     let port = config.port;
-    let cors_allowed_origins = config
-        .cors_allowed_origins
-        .iter()
-        .map(|origin| origin.parse::<HeaderValue>())
-        .collect::<Result<Vec<_>, _>>()?;
+    let cors_enabled = config.cors_enabled;
+    let cors_allowed_origins = if cors_enabled {
+        Some(
+            config
+                .cors_allowed_origins
+                .iter()
+                .map(|origin| origin.parse::<HeaderValue>())
+                .collect::<Result<Vec<_>, _>>()?,
+        )
+    } else {
+        None
+    };
 
     let state = AppState::new(config).await?;
     let shared_state = Arc::new(state);
@@ -72,35 +74,37 @@ async fn main() -> anyhow::Result<()> {
     info!("Database and Redis connections established.");
     print_banner(port);
 
-    let cors = CorsLayer::new()
-        .allow_origin(AllowOrigin::list(cors_allowed_origins))
-        .allow_methods([
-            Method::GET,
-            Method::POST,
-            Method::PUT,
-            Method::PATCH,
-            Method::DELETE,
-            Method::OPTIONS,
-        ])
-        .allow_headers([
-            axum::http::header::CONTENT_TYPE,
-            axum::http::header::AUTHORIZATION,
-            axum::http::header::ACCEPT,
-            axum::http::header::COOKIE,
-        ])
-        .allow_credentials(true);
+    let cors = cors_allowed_origins.map(|allowed_origins| {
+        CorsLayer::new()
+            .allow_origin(AllowOrigin::list(allowed_origins))
+            .allow_methods([
+                Method::GET,
+                Method::POST,
+                Method::PUT,
+                Method::PATCH,
+                Method::DELETE,
+                Method::OPTIONS,
+            ])
+            .allow_headers([
+                axum::http::header::CONTENT_TYPE,
+                axum::http::header::AUTHORIZATION,
+                axum::http::header::ACCEPT,
+                axum::http::header::COOKIE,
+            ])
+            .allow_credentials(true)
+    });
+
+    let service_builder = ServiceBuilder::new()
+        .layer(TraceLayer::new_for_http())
+        .option_layer(cors)
+        .layer(CompressionLayer::new());
 
     let app = Router::new()
         .route("/", get(|| async { "OK" }))
         .route("/health", get(|| async { "OK" }))
         .merge(routes::create_router())
         .merge(gateway::router())
-        .layer(
-            ServiceBuilder::new()
-                .layer(TraceLayer::new_for_http())
-                .layer(cors)
-                .layer(CompressionLayer::new())
-        )
+        .layer(service_builder)
         .with_state(shared_state)
         .fallback(|| async { (StatusCode::NOT_FOUND, "404 Not Found!") });
 

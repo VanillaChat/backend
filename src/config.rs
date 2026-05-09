@@ -11,6 +11,7 @@ pub struct Config {
     pub user_guild_limit: u32,
     pub max_avatar_size: usize,
     pub max_banner_size: usize,
+    pub cors_enabled: bool,
     pub cors_allowed_origins: Vec<String>,
 }
 
@@ -39,6 +40,9 @@ impl Config {
             max_banner_size: std::env::var("MAX_BANNER_SIZE")
                 .unwrap_or_else(|_| "25000000".to_string())
                 .parse()?,
+            cors_enabled: std::env::var("CORS_ENABLED")
+                .unwrap_or_else(|_| "1".to_string())
+                == "1",
             cors_allowed_origins: std::env::var("CORS_ALLOWED_ORIGINS")
                 .unwrap_or_else(|_| {
                     [
