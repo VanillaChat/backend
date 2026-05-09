@@ -6,15 +6,15 @@ use axum::{
     Json, Router,
 };
 use axum_extra::extract::CookieJar;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::json;
 
 use byteorm_client::MessageType;
 
 use crate::auth::token::verify_token;
 use crate::error::AppError;
-use crate::models::{Invite, Message, MessageAuthor, MemberInfo, User};
 use crate::middleware::rate_limit;
+use crate::models::{Invite, MemberInfo, Message, MessageAuthor, User};
 use crate::state::SharedState;
 
 #[derive(Debug, Deserialize)]
@@ -107,14 +107,14 @@ async fn get_channel_and_member(
         .find_first(|q| q.where_id(channel_id.to_string()))
         .await?
         .ok_or(AppError::NotFound("messages.errors.channelNotFound".to_string()))?;
-    
+
     let member = state.db.guild_members
         .find_first(|q| q
             .where_user_id(user_id.to_string())
             .where_guild_id(channel.guild_id.clone()))
         .await?
         .ok_or(AppError::Unauthorized)?;
-    
+
     Ok((channel, member))
 }
 
@@ -183,17 +183,40 @@ async fn create_message(
     let body: MessageCreateRequest = serde_json::from_slice(&body)
         .map_err(|_| AppError::BadRequest("Invalid JSON".to_string()))?;
     let account = get_current_user(&state, &jar).await?;
-    let (_channel, member) = get_channel_and_member(&state, &channel_id, &account.id).await?;
-    
+    let (channel, member) = get_channel_and_member(&state, &channel_id, &account.id).await?;
+
     let user = state.db.users
         .find_first(|q| q.where_id(account.id.clone()))
         .await?
         .ok_or(AppError::Unauthorized)?;
-    
+
     if body.content.is_empty() || body.content.len() > 2000 {
         return Err(AppError::BadRequest("messages.errors.validationFailed".to_string()));
     }
-    
+
+    if channel.rate_limit_per_user > 0 {
+        let owner_id = state.guild_owner(&member.guild_id).await?;
+        let is_owner = owner_id.as_deref() == Some(account.id.as_str());
+
+        if !is_owner {
+            let mut redis = state.redis.clone();
+            let key = format!("channel:{}:msg", channel_id);
+            let result = rate_limit(
+                &mut redis,
+                &account.id,
+                1,
+                (channel.rate_limit_per_user as i64) * 1000,
+                &key,
+            ).await?;
+            if result.limited {
+                return Err(AppError::TooManyRequests {
+                    message: "messages.errors.rateLimited".to_string(),
+                    retry_after: result.retry_after,
+                });
+            }
+        }
+    }
+
     let message_id = generate_snowflake();
     let nonce = body.nonce.clone().unwrap_or_else(|| "0".to_string());
     
@@ -373,7 +396,7 @@ async fn create_invite(
     let body: InviteCreateRequest = serde_json::from_slice(&body)
         .map_err(|_| AppError::BadRequest("Invalid JSON".to_string()))?;
     let account = get_current_user(&state, &jar).await?;
-    let (channel, member) = get_channel_and_member(&state, &channel_id, &account.id).await?;
+    let (_channel, member) = get_channel_and_member(&state, &channel_id, &account.id).await?;
     
     let code = generate_code();
     let invite_id = generate_snowflake();

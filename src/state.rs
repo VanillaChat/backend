@@ -257,4 +257,35 @@ impl AppState {
             }
         }
     }
+
+    pub async fn guild_owner(&self, guild_id: &str) -> Result<Option<String>, crate::error::AppError> {
+        use redis::AsyncCommands;
+        let mut redis = self.redis.clone();
+        let cache_key = format!("guild:{}:owner", guild_id);
+
+        let cached: Option<String> = redis.get(&cache_key).await.ok();
+        if let Some(owner) = cached {
+            return Ok(Some(owner));
+        }
+
+        let guild = self
+            .db
+            .guilds
+            .find_first(|q| q.where_id(guild_id.to_string()))
+            .await?;
+
+        if let Some(g) = guild {
+            let _: Result<(), _> = redis.set_ex(&cache_key, &g.owner_id, 300).await;
+            Ok(Some(g.owner_id))
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub async fn invalidate_guild_owner(&self, guild_id: &str) {
+        use redis::AsyncCommands;
+        let mut redis = self.redis.clone();
+        let cache_key = format!("guild:{}:owner", guild_id);
+        let _: Result<(), _> = redis.del(&cache_key).await;
+    }
 }

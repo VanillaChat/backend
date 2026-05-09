@@ -5,8 +5,11 @@ use axum::{
     routing::post,
     Json, Router,
 };
+use axum::extract::Path;
 use axum_extra::extract::CookieJar;
+use futures_util::TryFutureExt;
 use serde::Deserialize;
+use serde_json::json;
 
 use crate::auth::token::verify_token;
 use crate::error::{AppError, FieldError};
@@ -17,6 +20,12 @@ use crate::state::SharedState;
 pub struct CreateGuildRequest {
     name: String,
     brief: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateGuildChannelRequest {
+    name: String,
+    rate_limit_per_user: Option<i32>,
 }
 
 fn generate_snowflake() -> String {
@@ -39,6 +48,7 @@ fn generate_snowflake() -> String {
 pub fn router() -> Router<SharedState> {
     Router::new()
         .route("/", post(create_guild))
+        .route("/{id}/channels", post(create_guild_channel))
 }
 
 async fn get_current_user(
@@ -158,4 +168,73 @@ async fn create_guild(
         guild: guild.into(),
         channels: vec![channel.into()],
     }))
+}
+
+async fn create_guild_channel(
+    State(state): State<SharedState>,
+    jar: CookieJar,
+    Path(guild_id): Path<String>,
+    Json(body): Json<CreateGuildChannelRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let account = get_current_user(&state, &jar).await?;
+
+    let guild = state.db.guilds
+        .find_first(|q| q.where_id(guild_id.clone()))
+        .await?
+        .ok_or(AppError::NotFound("servers.notFound".to_string()))?;
+
+    if guild.owner_id != account.id {
+        return Err(AppError::Forbidden("servers.notOwner".to_string()));
+    }
+
+    let mut errors = Vec::new();
+
+    let name = body.name.trim().to_string();
+    if name.len() < 1 {
+        errors.push(FieldError {
+            code: "modals.channelCreate.nameMinChars".to_string(),
+            path: "name".to_string(),
+        });
+    }
+    if name.len() > 100 {
+        errors.push(FieldError {
+            code: "modals.channelCreate.nameMaxChars".to_string(),
+            path: "name".to_string(),
+        });
+    }
+
+    let rate_limit = body.rate_limit_per_user.unwrap_or(0);
+    if !(0..=21600).contains(&rate_limit) {
+        errors.push(FieldError {
+            code: "modals.channelCreate.rateLimitOutOfRange".to_string(),
+            path: "rate_limit_per_user".to_string(),
+        });
+    }
+
+    if !errors.is_empty() {
+        return Err(AppError::ValidationFailed(errors));
+    }
+
+    let channel_id = generate_snowflake();
+
+    let channel = state.db.channels
+        .create(|c| c
+            .set_id(channel_id.clone())
+            .set_guild_id(guild_id.clone())
+            .set_name(name)
+            .set_rate_limit_per_user(rate_limit)
+        )
+        .await
+        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+    let response: Channel = channel.into();
+
+    let broadcast = json!({
+        "op": 0,
+        "t": "CHANNEL_CREATE",
+        "d": response,
+    });
+    state.broadcast_to_room(&guild_id, broadcast.to_string());
+
+    Ok(Json(response))
 }
