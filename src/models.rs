@@ -10,7 +10,6 @@ pub struct User {
     #[serde(with = "chrono::serde::ts_milliseconds")]
     pub created_at: DateTime<Utc>,
     pub bot: bool,
-    pub status: String,
     pub flags: i32,
     pub bio: Option<String>,
     pub avatar: Option<String>,
@@ -61,8 +60,6 @@ pub struct GuildMember {
     pub nickname: Option<String>,
     #[serde(with = "chrono::serde::ts_milliseconds")]
     pub joined_at: DateTime<Utc>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub user: Option<User>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -92,26 +89,7 @@ pub struct Message {
     pub message_type: String,
     pub nonce: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub author: Option<MessageAuthor>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct MessageAuthor {
-    pub id: String,
-    pub username: String,
-    pub tag: String,
-    pub avatar: Option<String>,
-    pub bot: bool,
-    pub status: String,
-    pub flags: i32,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub member: Option<MemberInfo>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MemberInfo {
-    pub nickname: Option<String>,
+    pub author: Option<User>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -176,7 +154,6 @@ impl From<byteorm_client::Users> for User {
             tag: u.tag,
             created_at: u.created_at,
             bot: u.bot,
-            status: u.status.to_string(),
             flags: u.flags,
             bio: u.bio,
             avatar: u.avatar,
@@ -220,7 +197,6 @@ impl From<byteorm_client::GuildMembers> for GuildMember {
             user_id: m.user_id,
             nickname: m.nickname,
             joined_at: m.joined_at,
-            user: None,
         }
     }
 }

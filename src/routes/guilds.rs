@@ -13,7 +13,7 @@ use serde_json::json;
 
 use crate::auth::token::verify_token;
 use crate::error::{AppError, FieldError};
-use crate::models::{Channel, Guild};
+use crate::models::{Channel, Guild, User};
 use crate::state::SharedState;
 
 #[derive(Debug, Deserialize)]
@@ -157,16 +157,23 @@ async fn create_guild(
         .find_first(|q| q.where_id(channel_id))
         .await?
         .ok_or(AppError::InternalServerError("Failed to create channel".to_string()))?;
-    
+
+    let owner = state.db.users
+        .find_first(|q| q.where_id(account.id.clone()))
+        .await?
+        .ok_or(AppError::InternalServerError("Owner user not found".to_string()))?;
+
     #[derive(serde::Serialize)]
     struct CreateGuildResponse {
         guild: Guild,
         channels: Vec<Channel>,
+        users: Vec<User>,
     }
-    
+
     Ok(Json(CreateGuildResponse {
         guild: guild.into(),
         channels: vec![channel.into()],
+        users: vec![User::from(owner)],
     }))
 }
 

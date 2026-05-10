@@ -14,7 +14,7 @@ use byteorm_client::MessageType;
 use crate::auth::token::verify_token;
 use crate::error::AppError;
 use crate::middleware::rate_limit;
-use crate::models::{Invite, MemberInfo, Message, MessageAuthor, User};
+use crate::models::{Invite, Message, User};
 use crate::state::SharedState;
 
 #[derive(Debug, Deserialize)]
@@ -154,18 +154,9 @@ async fn get_messages(
              
         let mut msg: Message = msg_model.into();
         let user: User = user_model.into();
-        
-        msg.author = Some(MessageAuthor {
-            id: user.id,
-            username: user.username,
-            tag: user.tag,
-            avatar: user.avatar,
-            bot: user.bot,
-            status: user.status,
-            flags: user.flags,
-            member: None,
-        });
-        
+
+        msg.author = Some(user);
+
         msg
     }).collect();
     
@@ -231,18 +222,7 @@ async fn create_message(
     ).await.map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
     let mut response: Message = new_msg.into();
-    response.author = Some(MessageAuthor {
-        id: user.id.clone(),
-        username: user.username.clone(),
-        tag: user.tag.clone(),
-        avatar: user.avatar.clone(),
-        bot: user.bot,
-        status: user.status.to_string(),
-        flags: user.flags,
-        member: Some(MemberInfo {
-            nickname: member.nickname.clone(),
-        }),
-    });
+    response.author = Some(User::from(user));
     
     let broadcast_message = json!({
         "op": 0,
@@ -294,17 +274,22 @@ async fn update_message(
         .find_first(|q| q.where_id(message_id))
         .await?
         .ok_or(AppError::InternalServerError("Failed to update message".to_string()))?;
-    
-    let response: Message = updated.clone().into();
-    
+
+    let author = state.db.users
+        .find_first(|q| q.where_id(updated.author_id.clone()))
+        .await?;
+
+    let mut response: Message = updated.clone().into();
+    response.author = author.map(User::from);
+
     let broadcast_message = json!({
         "op": 0,
         "t": "MESSAGE_UPDATE",
         "d": response
     });
-    
+
     state.broadcast_to_room(&updated.guild_id, broadcast_message.to_string());
-    
+
     Ok(Json(response))
 }
 

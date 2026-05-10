@@ -1,10 +1,12 @@
 use axum::{
-    Json, Router,
-    extract::{Path, State},
-    http::StatusCode,
-    response::IntoResponse,
-    routing::{get, post},
+    extract::{Path, State}, response::IntoResponse,
+    routing::{get, post}
+    ,
+    Json,
+    Router,
 };
+use std::collections::{HashMap, HashSet};
+
 use axum_extra::extract::CookieJar;
 use serde_json::json;
 
@@ -13,7 +15,7 @@ use byteorm_client::UserStatus;
 use crate::auth::token::verify_token;
 use crate::error::AppError;
 use crate::models::{
-    Channel, Guild, GuildMember, InviteChannel, InviteGuild, InviteResponse, User,
+    Guild, GuildMember, InviteChannel, InviteGuild, InviteResponse, User,
 };
 use crate::state::SharedState;
 
@@ -97,11 +99,6 @@ async fn get_invite(
                 .ok()
                 .flatten()
                 .unwrap_or(false),
-            status: row
-                .try_get::<_, Option<String>>("creator_status")
-                .ok()
-                .flatten()
-                .unwrap_or_else(|| "ONLINE".to_string()),
             flags: row
                 .try_get::<_, Option<i32>>("creator_flags")
                 .ok()
@@ -209,10 +206,6 @@ async fn use_invite(
     });
     state.broadcast_to_room(&guild_id, broadcast.to_string());
 
-    if let Some(sockets) = state.connected_users.get(&account.id) {
-        for _socket in sockets.iter() {}
-    }
-
     if user.status != UserStatus::UNAVAILABLE {
         let presence_broadcast = json!({
             "op": 0,
@@ -222,7 +215,23 @@ async fn use_invite(
                 "status": user.status.to_string()
             }
         });
-        state.broadcast_to_room(&guild_id, presence_broadcast.to_string());
+        let serialized = presence_broadcast.to_string();
+
+        let guild_member_rows = state
+            .db
+            .guild_members
+            .find_many(|q| q.where_guild_id(guild_id.clone()))
+            .await?;
+        let mut recipients: HashSet<String> = HashSet::new();
+        for gm in &guild_member_rows {
+            if gm.user_id == account.id {
+                continue;
+            }
+            recipients.insert(gm.user_id.clone());
+        }
+        for rid in recipients {
+            state.send_to_user(&rid, serialized.clone());
+        }
     }
 
     let guild = state
@@ -247,23 +256,28 @@ async fn use_invite(
     let mut guild_response: Guild = guild.into();
     guild_response.channels = Some(channels.into_iter().map(|c| c.into()).collect());
 
-    let mut members_with_users = Vec::new();
+    let mut users_map: HashMap<String, User> = HashMap::new();
+    let mut members_out: Vec<GuildMember> = Vec::new();
     for member in members {
-        let user = state
+        let member_user = state
             .db
             .users
             .find_first(|q| q.where_id(member.user_id.clone()))
             .await?;
-        let mut member_resp: GuildMember = member.into();
-        if let Some(u) = user {
-            member_resp.user = Some(u.into());
+        if let Some(u) = member_user {
+            users_map
+                .entry(u.id.clone())
+                .or_insert_with(|| User::from(u));
         }
-        members_with_users.push(member_resp);
+        members_out.push(member.into());
     }
-    guild_response.members = Some(members_with_users);
+    guild_response.members = Some(members_out);
+
+    let users_array: Vec<&User> = users_map.values().collect();
 
     Ok(Json(json!({
         "code": code,
-        "guild": guild_response
+        "guild": guild_response,
+        "users": users_array
     })))
 }

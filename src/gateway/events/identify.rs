@@ -1,3 +1,5 @@
+use std::collections::{HashMap, HashSet};
+
 use serde_json::json;
 use tokio::sync::mpsc;
 
@@ -60,6 +62,8 @@ pub async fn handle(
     let mut guilds = Vec::new();
     let mut rooms = Vec::new();
     let mut presences = Vec::new();
+    let mut seen_presences: HashSet<String> = HashSet::new();
+    let mut users: HashMap<String, User> = HashMap::new();
 
     for member in &members {
         rooms.push(member.guild_id.clone());
@@ -83,7 +87,7 @@ pub async fn handle(
                 .find_many(|q| q.where_guild_id(guild.id.clone()))
                 .await?;
 
-            let mut members_with_users = Vec::new();
+            let mut guild_members_out = Vec::new();
             for gm in guild_members {
                 let member_user = state
                     .db
@@ -92,20 +96,25 @@ pub async fn handle(
                     .await?;
 
                 if let Some(u) = member_user {
-                    if state.connected_users.contains_key(&u.id) {
+                    if state.connected_users.contains_key(&u.id)
+                        && seen_presences.insert(u.id.clone())
+                    {
                         presences.push(Presence {
                             id: u.id.clone(),
                             status: u.status.to_string(),
                         });
                     }
 
-                    members_with_users.push(GuildMember {
+                    users
+                        .entry(u.id.clone())
+                        .or_insert_with(|| User::from(u.clone()));
+
+                    guild_members_out.push(GuildMember {
                         id: gm.id,
                         guild_id: gm.guild_id,
                         user_id: gm.user_id,
                         nickname: gm.nickname,
                         joined_at: gm.joined_at,
-                        user: Some(u.into()),
                     });
                 }
             }
@@ -118,7 +127,7 @@ pub async fn handle(
                 owner_id: guild.owner_id,
                 created_at: Some(guild.created_at),
                 channels: Some(channels.into_iter().map(|c| c.into()).collect()),
-                members: Some(members_with_users),
+                members: Some(guild_members_out),
             });
         }
     }
@@ -127,10 +136,17 @@ pub async fn handle(
         rooms.push("admins".to_string());
     }
 
-    presences.push(Presence {
-        id: account.id.clone(),
-        status: user.status.to_string(),
-    });
+    if seen_presences.insert(account.id.clone()) {
+        presences.push(Presence {
+            id: account.id.clone(),
+            status: user.status.to_string(),
+        });
+    }
+
+    let self_user = User::from(user.clone());
+    users
+        .entry(account.id.clone())
+        .or_insert_with(|| self_user.clone());
 
     let ready = Payload::dispatch(
         "READY",
@@ -149,24 +165,42 @@ pub async fn handle(
             "appSettings": {
                 "inviteCodes": []
             },
-            "user": User::from(user.clone()),
+            "user": self_user,
             "guilds": guilds,
-            "presences": presences
+            "presences": presences,
+            "users": users
         }),
     );
 
     let _ = tx.send(serde_json::to_string(&ready)?);
 
     if user.status != UserStatus::UNAVAILABLE {
+        let presence = Payload::dispatch(
+            "PRESENCE_UPDATE",
+            json!({
+                "userId": user.id,
+                "status": user.status.to_string()
+            }),
+        );
+        let serialized = serde_json::to_string(&presence)?;
+
+        let mut recipients: HashSet<String> = HashSet::new();
         for member in &members {
-            let presence = Payload::dispatch(
-                "PRESENCE_UPDATE",
-                json!({
-                    "userId": user.id,
-                    "status": user.status.to_string()
-                }),
-            );
-            state.broadcast_to_room(&member.guild_id, serde_json::to_string(&presence)?);
+            let guild_members = state
+                .db
+                .guild_members
+                .find_many(|q| q.where_guild_id(member.guild_id.clone()))
+                .await?;
+            for gm in guild_members {
+                if gm.user_id == account.id {
+                    continue;
+                }
+                recipients.insert(gm.user_id);
+            }
+        }
+
+        for rid in recipients {
+            state.send_to_user(&rid, serialized.clone());
         }
     }
 
