@@ -75,6 +75,17 @@ pub struct Channel {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct MessageReference {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub channel_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub guild_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Message {
     pub id: String,
     pub author_id: String,
@@ -90,6 +101,12 @@ pub struct Message {
     pub nonce: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub author: Option<User>,
+    #[serde(skip)]
+    pub reference_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message_reference: Option<MessageReference>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub referenced_message: Option<Box<Message>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -203,6 +220,11 @@ impl From<byteorm_client::GuildMembers> for GuildMember {
 
 impl From<byteorm_client::Messages> for Message {
     fn from(m: byteorm_client::Messages) -> Self {
+        let message_reference = m.reference_id.as_ref().map(|mid| MessageReference {
+            message_id: Some(mid.clone()),
+            channel_id: Some(m.channel_id.clone()),
+            guild_id: Some(m.guild_id.clone()),
+        });
         Self {
             id: m.id,
             author_id: m.author_id,
@@ -214,6 +236,9 @@ impl From<byteorm_client::Messages> for Message {
             message_type: m.message_type.to_string(),
             nonce: Some(m.nonce),
             author: None,
+            reference_id: m.reference_id,
+            message_reference,
+            referenced_message: None,
         }
     }
 }

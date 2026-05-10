@@ -16,6 +16,7 @@ enum MessageType {
     DEFAULT
     USER_JOIN
     USER_LEAVE
+    REPLY
 }
 
 model Users {
@@ -94,15 +95,16 @@ model Channels {
 }
 
 model Messages {
-    id          Text        PrimaryKey
-    author_id   Text        NotNull     ForeignKey(Users.id, onDelete: no action)
-    channel_id  Text        NotNull     ForeignKey(Channels.id, onDelete: cascade)
-    guild_id    Text        NotNull     ForeignKey(Guilds.id, onDelete: cascade)
-    content     Text?
-    created_at  TimestamptZ @default(now())
-    updated_at  TimestamptZ?
+    id           Text        PrimaryKey
+    author_id    Text        NotNull     ForeignKey(Users.id, onDelete: no action)
+    channel_id   Text        NotNull     ForeignKey(Channels.id, onDelete: cascade)
+    guild_id     Text        NotNull     ForeignKey(Guilds.id, onDelete: cascade)
+    content      Text?
+    created_at   TimestamptZ @default(now())
+    updated_at   TimestamptZ?
     message_type MessageType @default(DEFAULT)
-    nonce       Text        @default('0')
+    nonce        Text        @default('0')
+    reference_id Text?                  ForeignKey(Messages.id, onDelete: no action)
 }
 
 model GuildInvites {

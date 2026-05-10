@@ -17,10 +17,26 @@ use crate::middleware::rate_limit;
 use crate::models::{Invite, Message, User};
 use crate::state::SharedState;
 
+fn default_true() -> bool { true }
+
+#[derive(Debug, Deserialize)]
+struct MessageReferenceRequest {
+    #[serde(alias = "messageId")]
+    message_id: Option<String>,
+    #[serde(default, alias = "channelId")]
+    channel_id: Option<String>,
+    #[serde(default, alias = "guildId")]
+    guild_id: Option<String>,
+    #[serde(default = "default_true", alias = "failIfNotExists")]
+    fail_if_not_exists: bool,
+}
+
 #[derive(Debug, Deserialize)]
 pub struct MessageCreateRequest {
     content: String,
     nonce: Option<String>,
+    #[serde(default, alias = "messageReference")]
+    message_reference: Option<MessageReferenceRequest>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -147,11 +163,11 @@ async fn get_messages(
     let mut messages: Vec<Message> = messages_json.into_iter().map(|value| {
         let msg_model: byteorm_client::Messages = serde_json::from_value(value.clone())
              .expect("Failed to deserialize message");
-        
+
         let user_json = value.get("users").expect("Missing users join");
         let user_model: byteorm_client::Users = serde_json::from_value(user_json.clone())
              .expect("Failed to deserialize user");
-             
+
         let mut msg: Message = msg_model.into();
         let user: User = user_model.into();
 
@@ -159,9 +175,49 @@ async fn get_messages(
 
         msg
     }).collect();
-    
+
+    let ref_ids: Vec<String> = {
+        let mut ids: Vec<String> = messages.iter()
+            .filter_map(|m| m.reference_id.clone())
+            .collect();
+        ids.sort();
+        ids.dedup();
+        ids
+    };
+
+    if !ref_ids.is_empty() {
+        let ref_msgs = state.db.messages.query()
+            .where_id_in(ref_ids.clone())
+            .include_users()
+            .find_many_json()
+            .await
+            .map_err(|e| AppError::InternalServerError(e.to_string()))?;
+
+        let ref_map: std::collections::HashMap<String, Message> = ref_msgs
+            .into_iter()
+            .map(|value| {
+                let msg_model: byteorm_client::Messages = serde_json::from_value(value.clone())
+                    .expect("Failed to deserialize referenced message");
+                let user_json = value.get("users").expect("Missing users join");
+                let user_model: byteorm_client::Users = serde_json::from_value(user_json.clone())
+                    .expect("Failed to deserialize referenced user");
+                let mut msg: Message = msg_model.into();
+                msg.author = Some(user_model.into());
+                (msg.id.clone(), msg)
+            })
+            .collect();
+
+        for msg in messages.iter_mut() {
+            if let Some(rid) = msg.reference_id.as_ref() {
+                if let Some(ref_msg) = ref_map.get(rid) {
+                    msg.referenced_message = Some(Box::new(ref_msg.clone()));
+                }
+            }
+        }
+    }
+
     messages.reverse();
-    
+
     Ok(Json(messages))
 }
 
@@ -183,6 +239,49 @@ async fn create_message(
 
     if body.content.is_empty() || body.content.len() > 2000 {
         return Err(AppError::BadRequest("messages.errors.validationFailed".to_string()));
+    }
+
+    let mut reference_id: Option<String> = None;
+    let mut referenced_msg: Option<byteorm_client::Messages> = None;
+
+    if let Some(ref_req) = body.message_reference.as_ref() {
+        let target_id = ref_req.message_id.as_deref();
+        let fail = ref_req.fail_if_not_exists;
+
+        let target = match target_id {
+            Some(id) => {
+                state.db.messages
+                    .find_first(|q| q.where_id(id.to_string()))
+                    .await?
+            }
+            None => None,
+        };
+
+        match target {
+            Some(msg) => {
+                let channel_mismatch = msg.channel_id != channel_id
+                    || ref_req.channel_id.as_deref().is_some_and(|c| c != msg.channel_id)
+                    || ref_req.guild_id.as_deref().is_some_and(|g| g != msg.guild_id);
+
+                if channel_mismatch {
+                    if fail {
+                        return Err(AppError::BadRequest(
+                            "messages.errors.invalidReference".to_string(),
+                        ));
+                    }
+                } else {
+                    reference_id = Some(msg.id.clone());
+                    referenced_msg = Some(msg);
+                }
+            }
+            None => {
+                if fail {
+                    return Err(AppError::NotFound(
+                        "messages.errors.referencedMessageNotFound".to_string(),
+                    ));
+                }
+            }
+        }
     }
 
     if channel.rate_limit_per_user > 0 {
@@ -210,19 +309,39 @@ async fn create_message(
 
     let message_id = generate_snowflake();
     let nonce = body.nonce.clone().unwrap_or_else(|| "0".to_string());
-    
-    let new_msg = state.db.messages.create(|c| c
-        .set_id(message_id.clone())
-        .set_author_id(account.id.clone())
-        .set_channel_id(channel_id.clone())
-        .set_guild_id(member.guild_id.clone())
-        .set_content(Some(body.content.clone()))
-        .set_message_type(MessageType::DEFAULT)
-        .set_nonce(nonce.clone())
-    ).await.map_err(|e| AppError::InternalServerError(e.to_string()))?;
+    let msg_type = if reference_id.is_some() {
+        MessageType::REPLY
+    } else {
+        MessageType::DEFAULT
+    };
+    let ref_id_for_create = reference_id.clone();
+
+    let new_msg = state.db.messages.create(|c| {
+        let builder = c
+            .set_id(message_id.clone())
+            .set_author_id(account.id.clone())
+            .set_channel_id(channel_id.clone())
+            .set_guild_id(member.guild_id.clone())
+            .set_content(Some(body.content.clone()))
+            .set_message_type(msg_type)
+            .set_nonce(nonce.clone());
+        match ref_id_for_create.clone() {
+            Some(rid) => builder.set_reference_id(Some(rid)),
+            None => builder,
+        }
+    }).await.map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
     let mut response: Message = new_msg.into();
     response.author = Some(User::from(user));
+
+    if let Some(ref_msg) = referenced_msg {
+        let ref_author = state.db.users
+            .find_first(|q| q.where_id(ref_msg.author_id.clone()))
+            .await?;
+        let mut ref_response: Message = ref_msg.into();
+        ref_response.author = ref_author.map(User::from);
+        response.referenced_message = Some(Box::new(ref_response));
+    }
     
     let broadcast_message = json!({
         "op": 0,
