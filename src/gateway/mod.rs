@@ -242,19 +242,25 @@ async fn handle_socket(socket: WebSocket, state: SharedState, cookie_header: Opt
     }
 
     if let Some(uid) = user_id {
-        if let Some(mut entry) = state.connected_users.get_mut(&uid) {
-            entry.retain(|s| !s.is_closed());
-            if entry.is_empty() {
-                drop(entry);
-                state.connected_users.remove(&uid);
-            }
+        let still_connected = if let Some(mut entry) = state.connected_users.get_mut(&uid) {
+            entry.retain(|s| !s.same_channel(&tx));
+            !entry.is_empty()
+        } else {
+            false
+        };
+        if !still_connected {
+            state.connected_users.remove(&uid);
         }
 
-        let members = state
-            .db
-            .guild_members
-            .find_many(|q| q.where_user_id(uid.clone()))
-            .await;
+        let members = if !still_connected {
+            state
+                .db
+                .guild_members
+                .find_many(|q| q.where_user_id(uid.clone()))
+                .await
+        } else {
+            Ok(Vec::new())
+        };
 
         if let Ok(memberships) = members {
             let presence = Payload::dispatch(
