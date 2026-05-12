@@ -148,6 +148,8 @@ pub async fn handle(
         .entry(account.id.clone())
         .or_insert_with(|| self_user.clone());
 
+    let voice_states = state.voice.participants_for_guilds(&rooms);
+
     let ready = Payload::dispatch(
         "READY",
         json!({
@@ -168,7 +170,8 @@ pub async fn handle(
             "user": self_user,
             "guilds": guilds,
             "presences": presences,
-            "users": users
+            "voiceStates": voice_states,
+            "users": users,
         }),
     );
 

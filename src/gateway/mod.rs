@@ -249,7 +249,21 @@ async fn handle_socket(socket: WebSocket, state: SharedState, cookie_header: Opt
             false
         };
         if !still_connected {
-            state.connected_users.remove(&uid);
+            if let Some(participant) = state.voice.leave_user(&uid) {
+                let voice_event = Payload::dispatch(
+                    "VOICE_STATE_UPDATE",
+                    serde_json::json!({
+                        "guildId": participant.guild_id,
+                        "channelId": participant.channel_id,
+                        "userId": participant.user_id,
+                        "voiceState": null
+                    }),
+                );
+
+                if let Ok(serialized) = serde_json::to_string(&voice_event) {
+                    state.broadcast_to_room(&participant.guild_id, serialized);
+                }
+            }
         }
 
         let members = if !still_connected {

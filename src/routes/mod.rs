@@ -5,9 +5,10 @@ pub mod channels;
 pub mod guilds;
 pub mod invites;
 pub mod users;
+pub mod voice;
 
-use axum::Router;
 use crate::state::SharedState;
+use axum::Router;
 
 pub fn create_router() -> Router<SharedState> {
     Router::new()
@@ -18,4 +19,5 @@ pub fn create_router() -> Router<SharedState> {
         .nest("/invites", invites::router())
         .nest("/admin", admin::router())
         .nest("/cdn", cdn::router())
+        .merge(voice::router())
 }

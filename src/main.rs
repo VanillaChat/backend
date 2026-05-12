@@ -1,4 +1,10 @@
-use axum::{http::{HeaderValue, Method, StatusCode}, routing::get, Router};
+use axum::{
+    Router,
+    http::{HeaderValue, Method, StatusCode},
+    routing::get,
+};
+use config::Config;
+use state::AppState;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tower::ServiceBuilder;
@@ -18,9 +24,7 @@ mod middleware;
 mod models;
 mod routes;
 mod state;
-
-use config::Config;
-use state::AppState;
+mod voice;
 
 fn print_banner(port: u16) {
     println!(

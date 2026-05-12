@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -71,6 +71,8 @@ pub struct Channel {
     #[serde(with = "chrono::serde::ts_milliseconds_option")]
     pub created_at: Option<DateTime<Utc>>,
     pub rate_limit_per_user: i32,
+    #[serde(rename = "type")]
+    pub channel_type: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -202,6 +204,7 @@ impl From<byteorm_client::Channels> for Channel {
             guild_id: c.guild_id,
             created_at: Some(c.created_at),
             rate_limit_per_user: c.rate_limit_per_user,
+            channel_type: c.channel_type.to_string(),
         }
     }
 }

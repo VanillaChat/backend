@@ -1,9 +1,9 @@
 use axum::{
+    Json, Router,
     extract::{Path, Query, State},
     http::StatusCode,
     response::IntoResponse,
     routing::{delete, get, patch, post},
-    Json, Router,
 };
 use axum_extra::extract::CookieJar;
 use serde::Deserialize;
@@ -17,7 +17,9 @@ use crate::middleware::rate_limit;
 use crate::models::{Invite, Message, User};
 use crate::state::SharedState;
 
-fn default_true() -> bool { true }
+fn default_true() -> bool {
+    true
+}
 
 #[derive(Debug, Deserialize)]
 struct MessageReferenceRequest {
@@ -64,13 +66,13 @@ fn generate_snowflake() -> String {
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_millis() as u64;
-    
+
     let epoch = 1420070400000u64;
     let timestamp = now - epoch;
-    
+
     use rand::Rng;
     let random: u64 = rand::thread_rng().gen_range(0..4096);
-    
+
     let id = (timestamp << 22) | random;
     id.to_string()
 }
@@ -81,7 +83,9 @@ fn generate_code() -> String {
         .chars()
         .collect();
     let mut rng = rand::thread_rng();
-    (0..6).map(|_| chars[rng.gen_range(0..chars.len())]).collect()
+    (0..6)
+        .map(|_| chars[rng.gen_range(0..chars.len())])
+        .collect()
 }
 
 pub fn router() -> Router<SharedState> {
@@ -99,16 +103,23 @@ async fn get_current_user(
     jar: &CookieJar,
 ) -> Result<byteorm_client::Accounts, AppError> {
     let is_production = std::env::var("NODE_ENV").unwrap_or_default() == "production";
-    let cookie_name = if is_production { "__Host-Token" } else { "token" };
-    
-    let token = jar.get(cookie_name)
+    let cookie_name = if is_production {
+        "__Host-Token"
+    } else {
+        "token"
+    };
+
+    let token = jar
+        .get(cookie_name)
         .map(|c| c.value().to_string())
         .ok_or(AppError::Unauthorized)?;
-    
-    let _token_data = verify_token(&token, &state.config.token_secret)
-        .ok_or(AppError::Unauthorized)?;
-    
-    state.db.accounts
+
+    let _token_data =
+        verify_token(&token, &state.config.token_secret).ok_or(AppError::Unauthorized)?;
+
+    state
+        .db
+        .accounts
         .find_first(|q| q.where_token(token))
         .await?
         .ok_or(AppError::Unauthorized)
@@ -119,15 +130,22 @@ async fn get_channel_and_member(
     channel_id: &str,
     user_id: &str,
 ) -> Result<(byteorm_client::Channels, byteorm_client::GuildMembers), AppError> {
-    let channel = state.db.channels
+    let channel = state
+        .db
+        .channels
         .find_first(|q| q.where_id(channel_id.to_string()))
         .await?
-        .ok_or(AppError::NotFound("messages.errors.channelNotFound".to_string()))?;
+        .ok_or(AppError::NotFound(
+            "messages.errors.channelNotFound".to_string(),
+        ))?;
 
-    let member = state.db.guild_members
-        .find_first(|q| q
-            .where_user_id(user_id.to_string())
-            .where_guild_id(channel.guild_id.clone()))
+    let member = state
+        .db
+        .guild_members
+        .find_first(|q| {
+            q.where_user_id(user_id.to_string())
+                .where_guild_id(channel.guild_id.clone())
+        })
         .await?
         .ok_or(AppError::Unauthorized)?;
 
@@ -142,10 +160,13 @@ async fn get_messages(
 ) -> Result<impl IntoResponse, AppError> {
     let account = get_current_user(&state, &jar).await?;
     let (_channel, _member) = get_channel_and_member(&state, &channel_id, &account.id).await?;
-    
+
     let limit = query.limit.unwrap_or(50).min(100).max(1) as usize;
-    
-    let mut builder = state.db.messages.query()
+
+    let mut builder = state
+        .db
+        .messages
+        .query()
         .where_channel_id(channel_id)
         .include_users()
         .order_by_created_at_desc()
@@ -156,28 +177,34 @@ async fn get_messages(
     } else if let Some(after) = &query.after {
         builder = builder.where_id_gt(after.clone());
     }
-    
-    let messages_json = builder.find_many_json().await
+
+    let messages_json = builder
+        .find_many_json()
+        .await
         .map_err(|e| AppError::InternalServerError(e.to_string()))?;
-    
-    let mut messages: Vec<Message> = messages_json.into_iter().map(|value| {
-        let msg_model: byteorm_client::Messages = serde_json::from_value(value.clone())
-             .expect("Failed to deserialize message");
 
-        let user_json = value.get("users").expect("Missing users join");
-        let user_model: byteorm_client::Users = serde_json::from_value(user_json.clone())
-             .expect("Failed to deserialize user");
+    let mut messages: Vec<Message> = messages_json
+        .into_iter()
+        .map(|value| {
+            let msg_model: byteorm_client::Messages =
+                serde_json::from_value(value.clone()).expect("Failed to deserialize message");
 
-        let mut msg: Message = msg_model.into();
-        let user: User = user_model.into();
+            let user_json = value.get("users").expect("Missing users join");
+            let user_model: byteorm_client::Users =
+                serde_json::from_value(user_json.clone()).expect("Failed to deserialize user");
 
-        msg.author = Some(user);
+            let mut msg: Message = msg_model.into();
+            let user: User = user_model.into();
 
-        msg
-    }).collect();
+            msg.author = Some(user);
+
+            msg
+        })
+        .collect();
 
     let ref_ids: Vec<String> = {
-        let mut ids: Vec<String> = messages.iter()
+        let mut ids: Vec<String> = messages
+            .iter()
             .filter_map(|m| m.reference_id.clone())
             .collect();
         ids.sort();
@@ -186,7 +213,10 @@ async fn get_messages(
     };
 
     if !ref_ids.is_empty() {
-        let ref_msgs = state.db.messages.query()
+        let ref_msgs = state
+            .db
+            .messages
+            .query()
             .where_id_in(ref_ids.clone())
             .include_users()
             .find_many_json()
@@ -232,13 +262,17 @@ async fn create_message(
     let account = get_current_user(&state, &jar).await?;
     let (channel, member) = get_channel_and_member(&state, &channel_id, &account.id).await?;
 
-    let user = state.db.users
+    let user = state
+        .db
+        .users
         .find_first(|q| q.where_id(account.id.clone()))
         .await?
         .ok_or(AppError::Unauthorized)?;
 
     if body.content.is_empty() || body.content.len() > 2000 {
-        return Err(AppError::BadRequest("messages.errors.validationFailed".to_string()));
+        return Err(AppError::BadRequest(
+            "messages.errors.validationFailed".to_string(),
+        ));
     }
 
     let mut reference_id: Option<String> = None;
@@ -250,7 +284,9 @@ async fn create_message(
 
         let target = match target_id {
             Some(id) => {
-                state.db.messages
+                state
+                    .db
+                    .messages
                     .find_first(|q| q.where_id(id.to_string()))
                     .await?
             }
@@ -260,8 +296,14 @@ async fn create_message(
         match target {
             Some(msg) => {
                 let channel_mismatch = msg.channel_id != channel_id
-                    || ref_req.channel_id.as_deref().is_some_and(|c| c != msg.channel_id)
-                    || ref_req.guild_id.as_deref().is_some_and(|g| g != msg.guild_id);
+                    || ref_req
+                        .channel_id
+                        .as_deref()
+                        .is_some_and(|c| c != msg.channel_id)
+                    || ref_req
+                        .guild_id
+                        .as_deref()
+                        .is_some_and(|g| g != msg.guild_id);
 
                 if channel_mismatch {
                     if fail {
@@ -297,7 +339,8 @@ async fn create_message(
                 1,
                 (channel.rate_limit_per_user as i64) * 1000,
                 &key,
-            ).await?;
+            )
+            .await?;
             if result.limited {
                 return Err(AppError::TooManyRequests {
                     message: "messages.errors.rateLimited".to_string(),
@@ -316,41 +359,48 @@ async fn create_message(
     };
     let ref_id_for_create = reference_id.clone();
 
-    let new_msg = state.db.messages.create(|c| {
-        let builder = c
-            .set_id(message_id.clone())
-            .set_author_id(account.id.clone())
-            .set_channel_id(channel_id.clone())
-            .set_guild_id(member.guild_id.clone())
-            .set_content(Some(body.content.clone()))
-            .set_message_type(msg_type)
-            .set_nonce(nonce.clone());
-        match ref_id_for_create.clone() {
-            Some(rid) => builder.set_reference_id(Some(rid)),
-            None => builder,
-        }
-    }).await.map_err(|e| AppError::InternalServerError(e.to_string()))?;
+    let new_msg = state
+        .db
+        .messages
+        .create(|c| {
+            let builder = c
+                .set_id(message_id.clone())
+                .set_author_id(account.id.clone())
+                .set_channel_id(channel_id.clone())
+                .set_guild_id(member.guild_id.clone())
+                .set_content(Some(body.content.clone()))
+                .set_message_type(msg_type)
+                .set_nonce(nonce.clone());
+            match ref_id_for_create.clone() {
+                Some(rid) => builder.set_reference_id(Some(rid)),
+                None => builder,
+            }
+        })
+        .await
+        .map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
     let mut response: Message = new_msg.into();
     response.author = Some(User::from(user));
 
     if let Some(ref_msg) = referenced_msg {
-        let ref_author = state.db.users
+        let ref_author = state
+            .db
+            .users
             .find_first(|q| q.where_id(ref_msg.author_id.clone()))
             .await?;
         let mut ref_response: Message = ref_msg.into();
         ref_response.author = ref_author.map(User::from);
         response.referenced_message = Some(Box::new(ref_response));
     }
-    
+
     let broadcast_message = json!({
         "op": 0,
         "t": "MESSAGE_CREATE",
         "d": response
     });
-    
+
     state.broadcast_to_room(&member.guild_id, broadcast_message.to_string());
-    
+
     Ok(Json(response))
 }
 
@@ -364,37 +414,51 @@ async fn update_message(
         .map_err(|_| AppError::BadRequest("Invalid JSON".to_string()))?;
     let account = get_current_user(&state, &jar).await?;
     let (_channel, _member) = get_channel_and_member(&state, &channel_id, &account.id).await?;
-    
-    let message = state.db.messages
+
+    let message = state
+        .db
+        .messages
         .find_first(|q| q.where_id(message_id.clone()))
         .await?
-        .ok_or(AppError::NotFound("messages.errors.messageNotFound".to_string()))?;
-    
+        .ok_or(AppError::NotFound(
+            "messages.errors.messageNotFound".to_string(),
+        ))?;
+
     if message.author_id != account.id {
-        return Err(AppError::Forbidden("messages.errors.notYourMessage".to_string()));
+        return Err(AppError::Forbidden(
+            "messages.errors.notYourMessage".to_string(),
+        ));
     }
-    
+
     if let Some(content) = &body.content {
         if message.content.as_ref() == Some(content) {
             let response: Message = message.into();
             return Ok(Json(response));
         }
-        
-        state.db.messages
-            .update(|u| u
-                .set_content(Some(content.clone()))
-                .set_updated_at(Some(chrono::Utc::now()))
-                .where_id(message_id.clone())
-            )
+
+        state
+            .db
+            .messages
+            .update(|u| {
+                u.set_content(Some(content.clone()))
+                    .set_updated_at(Some(chrono::Utc::now()))
+                    .where_id(message_id.clone())
+            })
             .await?;
     }
-    
-    let updated = state.db.messages
+
+    let updated = state
+        .db
+        .messages
         .find_first(|q| q.where_id(message_id))
         .await?
-        .ok_or(AppError::InternalServerError("Failed to update message".to_string()))?;
+        .ok_or(AppError::InternalServerError(
+            "Failed to update message".to_string(),
+        ))?;
 
-    let author = state.db.users
+    let author = state
+        .db
+        .users
         .find_first(|q| q.where_id(updated.author_id.clone()))
         .await?;
 
@@ -419,20 +483,26 @@ async fn delete_message(
 ) -> Result<impl IntoResponse, AppError> {
     let account = get_current_user(&state, &jar).await?;
     let (_channel, _member) = get_channel_and_member(&state, &channel_id, &account.id).await?;
-    
-    let message = state.db.messages
+
+    let message = state
+        .db
+        .messages
         .find_first(|q| q.where_id(message_id.clone()))
         .await?
-        .ok_or(AppError::NotFound("messages.errors.messageNotFound".to_string()))?;
-    
+        .ok_or(AppError::NotFound(
+            "messages.errors.messageNotFound".to_string(),
+        ))?;
+
     if message.author_id != account.id {
         return Err(AppError::Forbidden("messages.errors.forbidden".to_string()));
     }
-    
-    state.db.messages
+
+    state
+        .db
+        .messages
         .delete(|d| d.where_id(message_id.clone()))
         .await?;
-    
+
     let broadcast_message = json!({
         "op": 0,
         "t": "MESSAGE_DELETE",
@@ -442,9 +512,9 @@ async fn delete_message(
             "guildId": message.guild_id
         }
     });
-    
+
     state.broadcast_to_room(&message.guild_id, broadcast_message.to_string());
-    
+
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -455,17 +525,19 @@ async fn typing_start(
 ) -> Result<impl IntoResponse, AppError> {
     let account = get_current_user(&state, &jar).await?;
     let (_channel, member) = get_channel_and_member(&state, &channel_id, &account.id).await?;
-    
-    let user = state.db.users
+
+    let user = state
+        .db
+        .users
         .find_first(|q| q.where_id(account.id.clone()))
         .await?
         .ok_or(AppError::Unauthorized)?;
-    
+
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_millis() as i64;
-    
+
     let broadcast_message = json!({
         "op": 0,
         "t": "TYPING_START",
@@ -485,9 +557,9 @@ async fn typing_start(
             "expiresAt": now + 10000
         }
     });
-    
+
     state.broadcast_to_room(&member.guild_id, broadcast_message.to_string());
-    
+
     Ok(Json(json!({"success": true})))
 }
 
@@ -501,29 +573,35 @@ async fn create_invite(
         .map_err(|_| AppError::BadRequest("Invalid JSON".to_string()))?;
     let account = get_current_user(&state, &jar).await?;
     let (_channel, member) = get_channel_and_member(&state, &channel_id, &account.id).await?;
-    
+
     let code = generate_code();
     let invite_id = generate_snowflake();
     let max_uses = body.max_uses.unwrap_or(0);
-    
-    state.db.guild_invites
-        .create(|c| c
-            .set_id(invite_id.clone())
-            .set_guild_id(member.guild_id.clone())
-            .set_code(code.clone())
-            .set_uses(0)
-            .set_max_uses(max_uses)
-            .set_creator_id(account.id.clone())
-            .set_channel_id(channel_id.clone())
-            .set_vanity(false)
-        )
+
+    state
+        .db
+        .guild_invites
+        .create(|c| {
+            c.set_id(invite_id.clone())
+                .set_guild_id(member.guild_id.clone())
+                .set_code(code.clone())
+                .set_uses(0)
+                .set_max_uses(max_uses)
+                .set_creator_id(account.id.clone())
+                .set_channel_id(channel_id.clone())
+                .set_vanity(false)
+        })
         .await?;
-    
-    let invite = state.db.guild_invites
+
+    let invite = state
+        .db
+        .guild_invites
         .find_first(|q| q.where_id(invite_id))
         .await?
-        .ok_or(AppError::InternalServerError("Failed to create invite".to_string()))?;
-    
+        .ok_or(AppError::InternalServerError(
+            "Failed to create invite".to_string(),
+        ))?;
+
     Ok(Json(Invite {
         id: invite.id,
         guild_id: invite.guild_id,

@@ -1,9 +1,8 @@
 use axum::{
-    extract::{Path, State}, response::IntoResponse,
-    routing::{get, post}
-    ,
-    Json,
-    Router,
+    Json, Router,
+    extract::{Path, State},
+    response::IntoResponse,
+    routing::{get, post},
 };
 use std::collections::{HashMap, HashSet};
 
@@ -14,9 +13,7 @@ use byteorm_client::UserStatus;
 
 use crate::auth::token::verify_token;
 use crate::error::AppError;
-use crate::models::{
-    Guild, GuildMember, InviteChannel, InviteGuild, InviteResponse, User,
-};
+use crate::models::{Guild, GuildMember, InviteChannel, InviteGuild, InviteResponse, User};
 use crate::state::SharedState;
 
 pub fn router() -> Router<SharedState> {
@@ -83,7 +80,9 @@ async fn get_invite(
     let creator_id: Option<String> = row.get("creator_id");
     let inviter = match (
         creator_id,
-        row.try_get::<_, Option<String>>("creator_username").ok().flatten(),
+        row.try_get::<_, Option<String>>("creator_username")
+            .ok()
+            .flatten(),
     ) {
         (Some(id), Some(username)) => Some(User {
             id,
