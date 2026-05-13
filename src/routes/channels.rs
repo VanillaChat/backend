@@ -9,7 +9,7 @@ use axum_extra::extract::CookieJar;
 use serde::Deserialize;
 use serde_json::json;
 
-use byteorm_client::MessageType;
+use byteorm_client::{ChannelType, MessageType};
 
 use crate::auth::token::verify_token;
 use crate::error::AppError;
@@ -152,6 +152,16 @@ async fn get_channel_and_member(
     Ok((channel, member))
 }
 
+fn ensure_text_channel(channel: &byteorm_client::Channels) -> Result<(), AppError> {
+    if channel.channel_type != ChannelType::TEXT {
+        return Err(AppError::BadRequest(
+            "channels.errors.notTextChannel".to_string(),
+        ));
+    }
+
+    Ok(())
+}
+
 async fn get_messages(
     State(state): State<SharedState>,
     jar: CookieJar,
@@ -159,7 +169,8 @@ async fn get_messages(
     Query(query): Query<MessagesQuery>,
 ) -> Result<impl IntoResponse, AppError> {
     let account = get_current_user(&state, &jar).await?;
-    let (_channel, _member) = get_channel_and_member(&state, &channel_id, &account.id).await?;
+    let (channel, _member) = get_channel_and_member(&state, &channel_id, &account.id).await?;
+    ensure_text_channel(&channel)?;
 
     let limit = query.limit.unwrap_or(50).min(100).max(1) as usize;
 
@@ -261,7 +272,7 @@ async fn create_message(
         .map_err(|_| AppError::BadRequest("Invalid JSON".to_string()))?;
     let account = get_current_user(&state, &jar).await?;
     let (channel, member) = get_channel_and_member(&state, &channel_id, &account.id).await?;
-
+    ensure_text_channel(&channel)?;
     let user = state
         .db
         .users
@@ -413,7 +424,8 @@ async fn update_message(
     let body: MessageUpdateRequest = serde_json::from_slice(&body)
         .map_err(|_| AppError::BadRequest("Invalid JSON".to_string()))?;
     let account = get_current_user(&state, &jar).await?;
-    let (_channel, _member) = get_channel_and_member(&state, &channel_id, &account.id).await?;
+    let (channel, _member) = get_channel_and_member(&state, &channel_id, &account.id).await?;
+    ensure_text_channel(&channel)?;
 
     let message = state
         .db
@@ -424,6 +436,12 @@ async fn update_message(
             "messages.errors.messageNotFound".to_string(),
         ))?;
 
+    if message.channel_id != channel_id {
+        return Err(AppError::NotFound(
+            "messages.errors.messageNotFound".to_string(),
+        ));
+    }
+
     if message.author_id != account.id {
         return Err(AppError::Forbidden(
             "messages.errors.notYourMessage".to_string(),
@@ -431,6 +449,12 @@ async fn update_message(
     }
 
     if let Some(content) = &body.content {
+        if content.is_empty() || content.len() > 2000 {
+            return Err(AppError::BadRequest(
+                "messages.errors.validationFailed".to_string(),
+            ));
+        }
+
         if message.content.as_ref() == Some(content) {
             let response: Message = message.into();
             return Ok(Json(response));
@@ -482,7 +506,8 @@ async fn delete_message(
     Path((channel_id, message_id)): Path<(String, String)>,
 ) -> Result<impl IntoResponse, AppError> {
     let account = get_current_user(&state, &jar).await?;
-    let (_channel, _member) = get_channel_and_member(&state, &channel_id, &account.id).await?;
+    let (channel, _member) = get_channel_and_member(&state, &channel_id, &account.id).await?;
+    ensure_text_channel(&channel)?;
 
     let message = state
         .db
@@ -492,6 +517,12 @@ async fn delete_message(
         .ok_or(AppError::NotFound(
             "messages.errors.messageNotFound".to_string(),
         ))?;
+
+    if message.channel_id != channel_id {
+        return Err(AppError::NotFound(
+            "messages.errors.messageNotFound".to_string(),
+        ));
+    }
 
     if message.author_id != account.id {
         return Err(AppError::Forbidden("messages.errors.forbidden".to_string()));
@@ -524,8 +555,8 @@ async fn typing_start(
     Path(channel_id): Path<String>,
 ) -> Result<impl IntoResponse, AppError> {
     let account = get_current_user(&state, &jar).await?;
-    let (_channel, member) = get_channel_and_member(&state, &channel_id, &account.id).await?;
-
+    let (channel, member) = get_channel_and_member(&state, &channel_id, &account.id).await?;
+    ensure_text_channel(&channel)?;
     let user = state
         .db
         .users
