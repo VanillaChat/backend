@@ -102,14 +102,11 @@ impl VoiceState {
         user_id: &str,
         client_session_id: &str,
     ) -> Option<VoiceParticipant> {
-        let current = self.participants_by_user.get(user_id)?;
-
-        if current.client_session_id != client_session_id {
-            return None;
-        }
-
-        drop(current);
-        self.leave_user(user_id)
+        self.participants_by_user
+            .remove_if(user_id, |_user_id, current| {
+                current.client_session_id == client_session_id
+            })
+            .map(|(_, participant)| participant)
     }
 
     pub fn leave_channel_session(
@@ -118,24 +115,19 @@ impl VoiceState {
         channel_id: &str,
         client_session_id: &str,
     ) -> Option<VoiceParticipant> {
-        let current = self.participants_by_user.get(user_id)?;
-
-        if current.channel_id != channel_id || current.client_session_id != client_session_id {
-            return None;
-        }
-
-        drop(current);
-        self.leave_user(user_id)
+        self.participants_by_user
+            .remove_if(user_id, |_user_id, current| {
+                current.channel_id == channel_id && current.client_session_id == client_session_id
+            })
+            .map(|(_, participant)| participant)
     }
 
     pub fn leave_channel(&self, user_id: &str, channel_id: &str) -> Option<VoiceParticipant> {
-        let current = self.participants_by_user.get(user_id)?;
-        if current.channel_id != channel_id {
-            return None;
-        }
-        drop(current);
-
-        self.leave_user(user_id)
+        self.participants_by_user
+            .remove_if(user_id, |_user_id, current| {
+                current.channel_id == channel_id
+            })
+            .map(|(_, participant)| participant)
     }
 
     pub fn channel_state(&self, guild_id: String, channel_id: String) -> VoiceChannelState {
