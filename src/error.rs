@@ -1,7 +1,7 @@
 use axum::{
+    Json,
     http::StatusCode,
     response::{IntoResponse, Response},
-    Json,
 };
 use serde::Serialize;
 use serde_json::json;
@@ -40,18 +40,12 @@ pub enum AppError {
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
         let (status, body) = match self {
-            AppError::Unauthorized => (
-                StatusCode::UNAUTHORIZED,
-                json!({"code": "UNAUTHORIZED"}),
-            ),
+            AppError::Unauthorized => (StatusCode::UNAUTHORIZED, json!({"code": "UNAUTHORIZED"})),
             AppError::Forbidden(msg) => (
                 StatusCode::FORBIDDEN,
                 json!({"code": "FORBIDDEN", "message": msg}),
             ),
-            AppError::NotFound(code) => (
-                StatusCode::NOT_FOUND,
-                json!({"code": code}),
-            ),
+            AppError::NotFound(code) => (StatusCode::NOT_FOUND, json!({"code": code})),
             AppError::BadRequest(msg) => (
                 StatusCode::BAD_REQUEST,
                 json!({"code": "BAD_REQUEST", "message": msg}),
@@ -71,7 +65,10 @@ impl IntoResponse for AppError {
                 StatusCode::INTERNAL_SERVER_ERROR,
                 json!({"code": "INTERNAL_SERVER_ERROR", "message": msg}),
             ),
-            AppError::TooManyRequests { message, retry_after } => (
+            AppError::TooManyRequests {
+                message,
+                retry_after,
+            } => (
                 StatusCode::TOO_MANY_REQUESTS,
                 json!({"message": message, "retryAfter": retry_after}),
             ),

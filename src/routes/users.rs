@@ -1,12 +1,12 @@
 use axum::{
+    Json, Router,
     extract::{Multipart, Path, State},
     http::StatusCode,
     response::IntoResponse,
     routing::{delete, patch, post},
-    Json, Router,
 };
 use axum_extra::extract::CookieJar;
-use serde::{Deserialize};
+use serde::Deserialize;
 use serde_json::json;
 use std::{io::Cursor, path::PathBuf};
 
@@ -14,7 +14,7 @@ use byteorm_client::Theme;
 
 use crate::auth::token::verify_token;
 use crate::error::AppError;
-use crate::models::{User};
+use crate::models::User;
 use crate::state::SharedState;
 
 pub fn router() -> Router<SharedState> {
@@ -78,16 +78,23 @@ async fn get_current_user(
     jar: &CookieJar,
 ) -> Result<byteorm_client::Accounts, AppError> {
     let is_production = std::env::var("NODE_ENV").unwrap_or_default() == "production";
-    let cookie_name = if is_production { "__Host-Token" } else { "token" };
-    
-    let token = jar.get(cookie_name)
+    let cookie_name = if is_production {
+        "__Host-Token"
+    } else {
+        "token"
+    };
+
+    let token = jar
+        .get(cookie_name)
         .map(|c| c.value().to_string())
         .ok_or(AppError::Unauthorized)?;
-    
-    let _token_data = verify_token(&token, &state.config.token_secret)
-        .ok_or(AppError::Unauthorized)?;
-    
-    state.db.accounts
+
+    let _token_data =
+        verify_token(&token, &state.config.token_secret).ok_or(AppError::Unauthorized)?;
+
+    state
+        .db
+        .accounts
         .find_first(|q| q.where_token(token))
         .await?
         .ok_or(AppError::Unauthorized)
@@ -109,17 +116,25 @@ async fn update_user(
     Json(body): Json<UpdateUserRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let account = get_current_user(&state, &jar).await?;
-    
-    let current_user = state.db.users
+
+    let current_user = state
+        .db
+        .users
         .find_first(|q| q.where_id(account.id.clone()))
         .await?
         .ok_or(AppError::Unauthorized)?;
-    
-    if body.username.is_none() && body.tag.is_none() && body.bio.is_none() 
-        && body.avatar.is_none() && body.banner.is_none() {
-        return Err(AppError::BadRequest("At least one field is required".to_string()));
+
+    if body.username.is_none()
+        && body.tag.is_none()
+        && body.bio.is_none()
+        && body.avatar.is_none()
+        && body.banner.is_none()
+    {
+        return Err(AppError::BadRequest(
+            "At least one field is required".to_string(),
+        ));
     }
-    
+
     let old_avatar = current_user.avatar.clone();
     let old_banner = current_user.banner.clone();
 
@@ -151,18 +166,24 @@ async fn update_user(
     if matches!(body.banner, Some(None)) {
         remove_user_image(UserImageKind::Banner, &account.id, old_banner).await;
     }
-    
-    let updated_user = state.db.users
+
+    let updated_user = state
+        .db
+        .users
         .find_first(|q| q.where_id(account.id.clone()))
         .await?
-        .ok_or(AppError::InternalServerError("Failed to update user".to_string()))?;
-    
-    let members = state.db.guild_members
+        .ok_or(AppError::InternalServerError(
+            "Failed to update user".to_string(),
+        ))?;
+
+    let members = state
+        .db
+        .guild_members
         .find_many(|q| q.where_user_id(account.id.clone()))
         .await?;
-    
+
     let user_response: User = updated_user.into();
-    
+
     for member in members {
         let broadcast = json!({
             "op": 0,
@@ -174,7 +195,7 @@ async fn update_user(
         });
         state.broadcast_to_room(&member.guild_id, broadcast.to_string());
     }
-    
+
     Ok(Json(user_response))
 }
 
@@ -291,7 +312,9 @@ async fn upload_user_image(
         .users
         .find_first(|q| q.where_id(account.id.clone()))
         .await?
-        .ok_or(AppError::InternalServerError("Failed to update user".to_string()))?;
+        .ok_or(AppError::InternalServerError(
+            "Failed to update user".to_string(),
+        ))?;
 
     Ok(Json(User::from(updated_user)))
 }
@@ -332,7 +355,9 @@ async fn update_settings(
     let account = get_current_user(&state, &jar).await?;
 
     if body.theme.is_none() && body.compact_mode.is_none() && body.compact_show_avatars.is_none() {
-        return Err(AppError::BadRequest("At least one field is required".to_string()));
+        return Err(AppError::BadRequest(
+            "At least one field is required".to_string(),
+        ));
     }
 
     let theme = body
@@ -345,10 +370,10 @@ async fn update_settings(
     let mut update_needed = false;
     let update_future = state.db.account_settings.update(|u| {
         let mut u = u.where_account_id(account.id.clone());
-        
+
         if let Some(theme) = theme {
-             u = u.set_theme(theme);
-             update_needed = true;
+            u = u.set_theme(theme);
+            update_needed = true;
         }
 
         if let Some(compact_mode) = body.compact_mode {
@@ -364,9 +389,11 @@ async fn update_settings(
     });
 
     if update_needed {
-        update_future.await.map_err(|e| AppError::InternalServerError(e.to_string()))?;
+        update_future
+            .await
+            .map_err(|e| AppError::InternalServerError(e.to_string()))?;
     }
-    
+
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -376,40 +403,52 @@ async fn leave_guild(
     Path(guild_id): Path<String>,
 ) -> Result<impl IntoResponse, AppError> {
     let account = get_current_user(&state, &jar).await?;
-    
-    state.db.guild_members
-        .find_first(|q| q
-            .where_user_id(account.id.clone())
-            .where_guild_id(guild_id.clone()))
+
+    state
+        .db
+        .guild_members
+        .find_first(|q| {
+            q.where_user_id(account.id.clone())
+                .where_guild_id(guild_id.clone())
+        })
         .await?
-        .ok_or(AppError::NotFound("You are not a member of this guild.".to_string()))?;
-    
-    let guild = state.db.guilds
+        .ok_or(AppError::NotFound(
+            "You are not a member of this guild.".to_string(),
+        ))?;
+
+    let guild = state
+        .db
+        .guilds
         .find_first(|q| q.where_id(guild_id.clone()))
         .await?
         .ok_or(AppError::NotFound("Guild not found".to_string()))?;
-    
+
     if guild.owner_id == account.id {
         return Err(AppError::Forbidden(
             "You can't leave the server as its owner. Please transfer ownership or delete the server first.".to_string()
         ));
     }
-    
-    let user = state.db.users
+
+    let user = state
+        .db
+        .users
         .find_first(|q| q.where_id(account.id.clone()))
         .await?;
-    
-    state.db.guild_members
-        .delete(|d| d
-            .where_user_id(account.id.clone())
-            .where_guild_id(guild_id.clone()))
+
+    state
+        .db
+        .guild_members
+        .delete(|d| {
+            d.where_user_id(account.id.clone())
+                .where_guild_id(guild_id.clone())
+        })
         .await?;
-    
+
     // if let Some(sockets) = state.connected_users.get(&account.id) {
     //     for socket in sockets.iter() {
     //     }
     // }
-    
+
     if let Some(user) = user {
         let broadcast = json!({
             "op": 0,
@@ -421,7 +460,7 @@ async fn leave_guild(
         });
         state.broadcast_to_room(&guild_id, broadcast.to_string());
     }
-    
+
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -438,21 +477,25 @@ async fn request_deletion(
     Json(body): Json<RequestDeletionRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let account = get_current_user(&state, &jar).await?;
-    
+
     use argon2::{Argon2, PasswordHash, PasswordVerifier};
-    
+
     let parsed_hash = PasswordHash::new(&account.password)
         .map_err(|_| AppError::InternalServerError("Invalid password hash".to_string()))?;
-    
-    if Argon2::default().verify_password(body.password.as_bytes(), &parsed_hash).is_err() {
+
+    if Argon2::default()
+        .verify_password(body.password.as_bytes(), &parsed_hash)
+        .is_err()
+    {
         return Err(AppError::Unauthorized);
     }
-    
+
     let delete_at = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
-        .as_millis() as i64 + 7 * 24 * 60 * 60 * 1000;
-    
+        .as_millis() as i64
+        + 7 * 24 * 60 * 60 * 1000;
+
     Ok(Json(json!({
         "deleteAt": delete_at
     })))
@@ -463,6 +506,6 @@ async fn cancel_deletion(
     jar: CookieJar,
 ) -> Result<impl IntoResponse, AppError> {
     let _account = get_current_user(&state, &jar).await?;
-    
+
     Ok(StatusCode::NO_CONTENT)
 }

@@ -86,12 +86,18 @@ model GuildMembers {
     joined_at   TimestamptZ NotNull     @default(now())
 }
 
+enum ChannelType {
+    TEXT
+    VOICE
+}
+
 model Channels {
     id                  Text        PrimaryKey
     name                Text        NotNull     @default('General')
     guild_id            Text        NotNull     ForeignKey(Guilds.id, onDelete: cascade)
     created_at          TimestamptZ @default(now())
     rate_limit_per_user Int         NotNull     @default(0)
+    channel_type        ChannelType NotNull     @default(TEXT)
 }
 
 model Messages {

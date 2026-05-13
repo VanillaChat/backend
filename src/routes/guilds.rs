@@ -1,11 +1,5 @@
-use axum::{
-    extract::State
-    ,
-    response::IntoResponse,
-    routing::post,
-    Json, Router,
-};
 use axum::extract::Path;
+use axum::{Json, Router, extract::State, response::IntoResponse, routing::post};
 use axum_extra::extract::CookieJar;
 use futures_util::TryFutureExt;
 use serde::Deserialize;
@@ -15,7 +9,7 @@ use crate::auth::token::verify_token;
 use crate::error::{AppError, FieldError};
 use crate::models::{Channel, Guild, User};
 use crate::state::SharedState;
-
+use byteorm_client::ChannelType;
 #[derive(Debug, Deserialize)]
 pub struct CreateGuildRequest {
     name: String,
@@ -26,6 +20,8 @@ pub struct CreateGuildRequest {
 pub struct CreateGuildChannelRequest {
     name: String,
     rate_limit_per_user: Option<i32>,
+    #[serde(rename = "type")]
+    channel_type: Option<String>,
 }
 
 fn generate_snowflake() -> String {
@@ -34,13 +30,13 @@ fn generate_snowflake() -> String {
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_millis() as u64;
-    
+
     let epoch = 1420070400000u64;
     let timestamp = now - epoch;
-    
+
     use rand::Rng;
     let random: u64 = rand::thread_rng().gen_range(0..4096);
-    
+
     let id = (timestamp << 22) | random;
     id.to_string()
 }
@@ -56,16 +52,23 @@ async fn get_current_user(
     jar: &CookieJar,
 ) -> Result<byteorm_client::Accounts, AppError> {
     let is_production = std::env::var("NODE_ENV").unwrap_or_default() == "production";
-    let cookie_name = if is_production { "__Host-Token" } else { "token" };
-    
-    let token = jar.get(cookie_name)
+    let cookie_name = if is_production {
+        "__Host-Token"
+    } else {
+        "token"
+    };
+
+    let token = jar
+        .get(cookie_name)
         .map(|c| c.value().to_string())
         .ok_or(AppError::Unauthorized)?;
-    
-    let _token_data = verify_token(&token, &state.config.token_secret)
-        .ok_or(AppError::Unauthorized)?;
-    
-    state.db.accounts
+
+    let _token_data =
+        verify_token(&token, &state.config.token_secret).ok_or(AppError::Unauthorized)?;
+
+    state
+        .db
+        .accounts
         .find_first(|q| q.where_token(token))
         .await?
         .ok_or(AppError::Unauthorized)
@@ -77,9 +80,9 @@ async fn create_guild(
     Json(body): Json<CreateGuildRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let account = get_current_user(&state, &jar).await?;
-    
+
     let mut errors = Vec::new();
-    
+
     if body.name.len() < 2 {
         errors.push(FieldError {
             code: "modals.serverCreate.nameMinChars".to_string(),
@@ -111,57 +114,80 @@ async fn create_guild(
     if !errors.is_empty() {
         return Err(AppError::ValidationFailed(errors));
     }
-    
-    let member_count = state.db.guild_members
+
+    let member_count = state
+        .db
+        .guild_members
         .count(|q| q.where_user_id(account.id.clone()))
         .await?;
-    
+
     if member_count >= state.config.user_guild_limit as i64 {
-        return Err(AppError::Forbidden("app.modals.serverCreate.serverLimitExceeded".to_string()));
+        return Err(AppError::Forbidden(
+            "app.modals.serverCreate.serverLimitExceeded".to_string(),
+        ));
     }
-    
+
     let guild_id = generate_snowflake();
     let channel_id = generate_snowflake();
-    
-    state.db.guilds
-        .create(|c| c
-            .set_id(guild_id.clone())
-            .set_name(body.name)
-            .set_brief(body.brief)
-            .set_owner_id(account.id.clone())
-        )
+
+    state
+        .db
+        .guilds
+        .create(|c| {
+            c.set_id(guild_id.clone())
+                .set_name(body.name)
+                .set_brief(body.brief)
+                .set_owner_id(account.id.clone())
+        })
         .await?;
-    
-    state.db.guild_members
-        .create(|c| c
-            .set_guild_id(guild_id.clone())
-            .set_user_id(account.id.clone())
-        )
+
+    state
+        .db
+        .guild_members
+        .create(|c| {
+            c.set_guild_id(guild_id.clone())
+                .set_user_id(account.id.clone())
+        })
         .await?;
-    
-    state.db.channels
-        .create(|c| c
-            .set_id(channel_id.clone())
-            .set_guild_id(guild_id.clone())
-            .set_name("General".to_string())
-            .set_rate_limit_per_user(0)
-        )
+
+    state
+        .db
+        .channels
+        .create(|c| {
+            c.set_id(channel_id.clone())
+                .set_guild_id(guild_id.clone())
+                .set_name("General".to_string())
+                .set_rate_limit_per_user(0)
+                .set_channel_type(ChannelType::TEXT)
+        })
         .await?;
-    
-    let guild = state.db.guilds
+
+    let guild = state
+        .db
+        .guilds
         .find_first(|q| q.where_id(guild_id.clone()))
         .await?
-        .ok_or(AppError::InternalServerError("Failed to create guild".to_string()))?;
-    
-    let channel = state.db.channels
+        .ok_or(AppError::InternalServerError(
+            "Failed to create guild".to_string(),
+        ))?;
+
+    let channel = state
+        .db
+        .channels
         .find_first(|q| q.where_id(channel_id))
         .await?
-        .ok_or(AppError::InternalServerError("Failed to create channel".to_string()))?;
+        .ok_or(AppError::InternalServerError(
+            "Failed to create channel".to_string(),
+        ))?;
 
-    let owner = state.db.users
+    let owner = state
+        .db
+        .users
         .find_first(|q| q.where_id(account.id.clone()))
         .await?
-        .ok_or(AppError::InternalServerError("Owner user not found".to_string()))?;
+        .ok_or(AppError::InternalServerError(
+            "Owner user not found".to_string(),
+        ))?;
 
     #[derive(serde::Serialize)]
     struct CreateGuildResponse {
@@ -185,7 +211,9 @@ async fn create_guild_channel(
 ) -> Result<impl IntoResponse, AppError> {
     let account = get_current_user(&state, &jar).await?;
 
-    let guild = state.db.guilds
+    let guild = state
+        .db
+        .guilds
         .find_first(|q| q.where_id(guild_id.clone()))
         .await?
         .ok_or(AppError::NotFound("servers.notFound".to_string()))?;
@@ -210,13 +238,20 @@ async fn create_guild_channel(
         });
     }
 
-    let rate_limit = body.rate_limit_per_user.unwrap_or(0);
-    if !(0..=21600).contains(&rate_limit) {
-        errors.push(FieldError {
-            code: "modals.channelCreate.rateLimitOutOfRange".to_string(),
-            path: "rate_limit_per_user".to_string(),
-        });
-    }
+    let channel_type = parse_channel_type(body.channel_type.as_deref())?;
+
+    let rate_limit = if channel_type == ChannelType::VOICE {
+        0
+    } else {
+        let rate_limit = body.rate_limit_per_user.unwrap_or(0);
+        if !(0..=21600).contains(&rate_limit) {
+            errors.push(FieldError {
+                code: "modals.channelCreate.rateLimitRange".to_string(),
+                path: "rate_limit_per_user".to_string(),
+            });
+        }
+        rate_limit
+    };
 
     if !errors.is_empty() {
         return Err(AppError::ValidationFailed(errors));
@@ -224,13 +259,16 @@ async fn create_guild_channel(
 
     let channel_id = generate_snowflake();
 
-    let channel = state.db.channels
-        .create(|c| c
-            .set_id(channel_id.clone())
-            .set_guild_id(guild_id.clone())
-            .set_name(name)
-            .set_rate_limit_per_user(rate_limit)
-        )
+    let channel = state
+        .db
+        .channels
+        .create(|c| {
+            c.set_id(channel_id.clone())
+                .set_guild_id(guild_id.clone())
+                .set_name(name)
+                .set_rate_limit_per_user(rate_limit)
+                .set_channel_type(channel_type)
+        })
         .await
         .map_err(|e| AppError::InternalServerError(e.to_string()))?;
 
@@ -244,4 +282,14 @@ async fn create_guild_channel(
     state.broadcast_to_room(&guild_id, broadcast.to_string());
 
     Ok(Json(response))
+}
+
+fn parse_channel_type(value: Option<&str>) -> Result<ChannelType, AppError> {
+    match value.unwrap_or("TEXT").to_ascii_uppercase().as_str() {
+        "TEXT" => Ok(ChannelType::TEXT),
+        "VOICE" => Ok(ChannelType::VOICE),
+        _ => Err(AppError::BadRequest(
+            "channels.errors.invalidType".to_string(),
+        )),
+    }
 }

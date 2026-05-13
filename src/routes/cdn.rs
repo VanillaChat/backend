@@ -1,24 +1,15 @@
-use axum::{
-    extract::Path,
-    http::StatusCode,
-    response::IntoResponse,
-    routing::get,
-    Router,
-};
+use axum::{Router, extract::Path, http::StatusCode, response::IntoResponse, routing::get};
 use tower_http::services::ServeDir;
 
 use crate::state::SharedState;
 
 pub fn router() -> Router<SharedState> {
-    Router::new()
-        .route("/{*path}", get(serve_cdn))
+    Router::new().route("/{*path}", get(serve_cdn))
 }
 
-async fn serve_cdn(
-    Path(path): Path<String>,
-) -> impl IntoResponse {
+async fn serve_cdn(Path(path): Path<String>) -> impl IntoResponse {
     let cdn_path = std::path::PathBuf::from("./cdn").join(&path);
-    
+
     if cdn_path.exists() && cdn_path.is_file() {
         match tokio::fs::read(&cdn_path).await {
             Ok(contents) => {
@@ -33,12 +24,13 @@ async fn serve_cdn(
                 } else {
                     "application/octet-stream"
                 };
-                
+
                 (
                     StatusCode::OK,
                     [(axum::http::header::CONTENT_TYPE, content_type)],
-                    contents
-                ).into_response()
+                    contents,
+                )
+                    .into_response()
             }
             Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
         }

@@ -28,9 +28,9 @@ impl Config {
                 .parse()?,
             token_secret: std::env::var("TOKEN_SECRET")?,
             registration_closed: std::env::var("REGISTRATION_CLOSED")
-                .unwrap_or_else(|_| "0".to_string()) == "1",
-            verbose: std::env::var("VERBOSE")
-                .unwrap_or_else(|_| "0".to_string()) == "1",
+                .unwrap_or_else(|_| "0".to_string())
+                == "1",
+            verbose: std::env::var("VERBOSE").unwrap_or_else(|_| "0".to_string()) == "1",
             user_guild_limit: std::env::var("USER_GUILD_LIMIT")
                 .unwrap_or_else(|_| "100".to_string())
                 .parse()?,
@@ -40,9 +40,7 @@ impl Config {
             max_banner_size: std::env::var("MAX_BANNER_SIZE")
                 .unwrap_or_else(|_| "25000000".to_string())
                 .parse()?,
-            cors_enabled: std::env::var("CORS_ENABLED")
-                .unwrap_or_else(|_| "1".to_string())
-                == "1",
+            cors_enabled: std::env::var("CORS_ENABLED").unwrap_or_else(|_| "1".to_string()) == "1",
             cors_allowed_origins: std::env::var("CORS_ALLOWED_ORIGINS")
                 .unwrap_or_else(|_| {
                     [

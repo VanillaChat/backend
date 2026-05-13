@@ -1,3 +1,6 @@
+use crate::config::Config;
+use crate::gateway::WsSender;
+use crate::voice::VoiceState;
 use anyhow::Context;
 use byteorm_client::Client;
 use dashmap::DashMap;
@@ -13,9 +16,6 @@ use std::{
 };
 use tokio::sync::broadcast;
 
-use crate::config::Config;
-use crate::gateway::WsSender;
-
 pub type SharedState = Arc<AppState>;
 
 #[derive(Clone)]
@@ -26,6 +26,7 @@ pub struct AppState {
     pub connected_users: Arc<DashMap<String, Vec<WsSender>>>,
     pub gateway_tx: broadcast::Sender<GatewayBroadcast>,
     pub gateway_metrics: Arc<GatewayMetrics>,
+    pub voice: Arc<VoiceState>,
 }
 
 #[derive(Debug, Clone)]
@@ -239,6 +240,7 @@ impl AppState {
             connected_users: Arc::new(DashMap::new()),
             gateway_tx,
             gateway_metrics: Arc::new(GatewayMetrics::new()),
+            voice: Arc::new(VoiceState::default()),
         })
     }
 
@@ -258,7 +260,10 @@ impl AppState {
         }
     }
 
-    pub async fn guild_owner(&self, guild_id: &str) -> Result<Option<String>, crate::error::AppError> {
+    pub async fn guild_owner(
+        &self,
+        guild_id: &str,
+    ) -> Result<Option<String>, crate::error::AppError> {
         use redis::AsyncCommands;
         let mut redis = self.redis.clone();
         let cache_key = format!("guild:{}:owner", guild_id);
