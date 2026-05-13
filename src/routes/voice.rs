@@ -1,3 +1,7 @@
+use crate::auth::token::verify_token;
+use crate::error::AppError;
+use crate::state::SharedState;
+use crate::voice::{VoiceParticipant, VoiceQuality, now_ms};
 use axum::{
     Json, Router,
     extract::{Path, State},
@@ -5,13 +9,9 @@ use axum::{
     routing::{get, post},
 };
 use axum_extra::extract::CookieJar;
+use byteorm_client::ChannelType;
 use serde::Deserialize;
 use serde_json::json;
-use byteorm_client::ChannelType;
-use crate::auth::token::verify_token;
-use crate::error::AppError;
-use crate::state::SharedState;
-use crate::voice::{VoiceParticipant, VoiceQuality, now_ms};
 
 pub fn router() -> Router<SharedState> {
     Router::new()
@@ -195,4 +195,3 @@ async fn leave_voice(
         channel.id.clone(),
     )))
 }
-
