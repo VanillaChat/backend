@@ -7,7 +7,7 @@ use axum::{
 use axum_extra::extract::CookieJar;
 use serde::Deserialize;
 use serde_json::json;
-
+use byteorm_client::ChannelType;
 use crate::auth::token::verify_token;
 use crate::error::AppError;
 use crate::state::SharedState;
@@ -81,7 +81,7 @@ async fn get_channel_and_member(
 }
 
 fn ensure_voice_channel(channel: &byteorm_client::Channels) -> Result<(), AppError> {
-    if channel.channel_type.to_string() != "VOICE" {
+    if channel.channel_type != ChannelType::VOICE {
         return Err(AppError::BadRequest(
             "voice.errors.channelIsNotVoice".to_string(),
         ));
@@ -195,3 +195,4 @@ async fn leave_voice(
         channel.id.clone(),
     )))
 }
+

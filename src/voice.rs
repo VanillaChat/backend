@@ -14,7 +14,7 @@ pub enum VoiceQuality {
 
 impl Default for VoiceQuality {
     fn default() -> Self {
-        Self::Auto
+        Self::VoiceLossless
     }
 }
 
@@ -110,7 +110,7 @@ impl VoiceState {
         let participants = self
             .participants_by_user
             .iter()
-            .filter(|entry| entry.channel_id == channel_id)
+            .filter(|entry| entry.guild_id == guild_id && entry.channel_id == channel_id)
             .map(|entry| entry.value().clone())
             .collect();
 
