@@ -243,7 +243,14 @@ async fn create_guild_channel(
     let rate_limit = if channel_type == ChannelType::VOICE {
         0
     } else {
-        body.rate_limit_per_user.unwrap_or(0)
+        let rate_limit = body.rate_limit_per_user.unwrap_or(0);
+        if !(0..=21600).contains(&rate_limit) {
+            errors.push(FieldError {
+                code: "modals.channelCreate.rateLimitRange".to_string(),
+                path: "rate_limit_per_user".to_string(),
+            });
+        }
+        rate_limit
     };
 
     if !errors.is_empty() {

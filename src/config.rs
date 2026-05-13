@@ -1,6 +1,4 @@
-use crate::voice::VoiceState;
 use serde::Deserialize;
-use std::sync::Arc;
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct Config {
