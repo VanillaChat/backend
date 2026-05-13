@@ -64,6 +64,7 @@ pub struct VoiceParticipant {
     pub user_id: String,
     pub guild_id: String,
     pub channel_id: String,
+    pub client_session_id: String,
     pub quality: VoiceQuality,
     pub audio_format: VoiceAudioFormat,
     pub self_mute: bool,
@@ -94,6 +95,37 @@ impl VoiceState {
         self.participants_by_user
             .remove(user_id)
             .map(|(_, participant)| participant)
+    }
+
+    pub fn leave_session(
+        &self,
+        user_id: &str,
+        client_session_id: &str,
+    ) -> Option<VoiceParticipant> {
+        let current = self.participants_by_user.get(user_id)?;
+
+        if current.client_session_id != client_session_id {
+            return None;
+        }
+
+        drop(current);
+        self.leave_user(user_id)
+    }
+
+    pub fn leave_channel_session(
+        &self,
+        user_id: &str,
+        channel_id: &str,
+        client_session_id: &str,
+    ) -> Option<VoiceParticipant> {
+        let current = self.participants_by_user.get(user_id)?;
+
+        if current.channel_id != channel_id || current.client_session_id != client_session_id {
+            return None;
+        }
+
+        drop(current);
+        self.leave_user(user_id)
     }
 
     pub fn leave_channel(&self, user_id: &str, channel_id: &str) -> Option<VoiceParticipant> {

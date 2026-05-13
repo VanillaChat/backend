@@ -26,6 +26,22 @@ pub struct JoinVoiceRequest {
     pub quality: Option<VoiceQuality>,
     pub self_mute: Option<bool>,
     pub self_deaf: Option<bool>,
+    pub client_session_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LeaveVoiceRequest {
+    pub client_session_id: Option<String>,
+}
+
+fn require_client_session_id(value: Option<String>) -> Result<String, AppError> {
+    let value = value
+        .map(|v| v.trim().to_string())
+        .filter(|v| !v.is_empty() && v.len() <= 128)
+        .ok_or_else(|| AppError::BadRequest("voice.errors.clientSessionRequired".to_string()))?;
+
+    Ok(value)
 }
 
 async fn get_current_user(
@@ -117,10 +133,13 @@ async fn join_voice(
 
     let quality = body.quality.unwrap_or_default();
 
+    let client_session_id = require_client_session_id(body.client_session_id)?;
+
     let participant = VoiceParticipant {
         user_id: account.id.clone(),
         guild_id: channel.guild_id.clone(),
         channel_id: channel.id.clone(),
+        client_session_id,
         quality,
         audio_format: quality.audio_format(),
         self_mute: body.self_mute.unwrap_or(false),
@@ -170,12 +189,19 @@ async fn leave_voice(
     State(state): State<SharedState>,
     jar: CookieJar,
     Path(channel_id): Path<String>,
+    Json(body): Json<LeaveVoiceRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let account = get_current_user(&state, &jar).await?;
     let (channel, _member) = get_channel_and_member(&state, &channel_id, &account.id).await?;
     ensure_voice_channel(&channel)?;
 
-    if let Some(participant) = state.voice.leave_channel(&account.id, &channel.id) {
+    let client_session_id = require_client_session_id(body.client_session_id)?;
+
+    if let Some(participant) =
+        state
+            .voice
+            .leave_channel_session(&account.id, &channel.id, &client_session_id)
+    {
         let leave_event = json!({
             "op": 0,
             "t": "VOICE_STATE_UPDATE",

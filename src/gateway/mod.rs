@@ -20,6 +20,20 @@ use crate::state::SharedState;
 
 pub type WsSender = mpsc::UnboundedSender<String>;
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct IdentifyData {
+    client_session_id: Option<String>,
+}
+
+fn parse_client_session_id(value: Option<&serde_json::Value>) -> Option<String> {
+    value
+        .and_then(|v| serde_json::from_value::<IdentifyData>(v.clone()).ok())
+        .and_then(|d| d.client_session_id)
+        .map(|v| v.trim().to_string())
+        .filter(|v| !v.is_empty() && v.len() <= 128)
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Payload {
     pub op: i32,
@@ -124,6 +138,7 @@ async fn handle_socket(socket: WebSocket, state: SharedState, cookie_header: Opt
     let state_clone = state.clone();
 
     let mut user_id: Option<String> = None;
+    let mut client_session_id: Option<String> = None;
     let mut subscribed_rooms: Vec<String> = Vec::new();
 
     let send_task = tokio::spawn(async move {
@@ -165,7 +180,8 @@ async fn handle_socket(socket: WebSocket, state: SharedState, cookie_header: Opt
                             }
                             2 => {
                                 let token = extract_token_from_cookie(cookie_header.as_deref());
-
+                                let next_client_session_id =
+                                    parse_client_session_id(payload.d.as_ref());
                                 match events::identify::handle(
                                     &state_clone,
                                     &tx,
@@ -175,6 +191,7 @@ async fn handle_socket(socket: WebSocket, state: SharedState, cookie_header: Opt
                                 .await
                                 {
                                     Ok(result) => {
+                                        client_session_id = next_client_session_id;
                                         user_id = Some(result.user_id.clone());
                                         subscribed_rooms = result.rooms.clone();
                                         state_clone
@@ -242,25 +259,37 @@ async fn handle_socket(socket: WebSocket, state: SharedState, cookie_header: Opt
     }
 
     if let Some(uid) = user_id {
+        let mut remove_connected_entry = false;
+
         let still_connected = if let Some(mut entry) = state.connected_users.get_mut(&uid) {
             entry.retain(|s| !s.same_channel(&tx));
-            !entry.is_empty()
+
+            let still = !entry.is_empty();
+            remove_connected_entry = !still;
+            still
         } else {
             false
         };
-        if let Some(participant) = state.voice.leave_user(&uid) {
-            let voice_event = Payload::dispatch(
-                "VOICE_STATE_UPDATE",
-                serde_json::json!({
-                    "guildId": participant.guild_id,
-                    "channelId": participant.channel_id,
-                    "userId": participant.user_id,
-                    "voiceState": null
-                }),
-            );
 
-            if let Ok(serialized) = serde_json::to_string(&voice_event) {
-                state.broadcast_to_room(&participant.guild_id, serialized);
+        if remove_connected_entry {
+            state.connected_users.remove(&uid);
+        }
+
+        if let Some(session_id) = client_session_id.as_deref() {
+            if let Some(participant) = state.voice.leave_session(&uid, session_id) {
+                let voice_event = Payload::dispatch(
+                    "VOICE_STATE_UPDATE",
+                    serde_json::json!({
+                        "guildId": participant.guild_id,
+                        "channelId": participant.channel_id,
+                        "userId": participant.user_id,
+                        "voiceState": null
+                    }),
+                );
+
+                if let Ok(serialized) = serde_json::to_string(&voice_event) {
+                    state.broadcast_to_room(&participant.guild_id, serialized);
+                }
             }
         }
 
